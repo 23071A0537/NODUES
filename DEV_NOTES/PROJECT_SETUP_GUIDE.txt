@@ -1,0 +1,346 @@
+================================================================================
+                    NODUES PROJECT - COMPLETE SETUP GUIDE
+                      For New Developers & Contributors
+================================================================================
+
+PREREQUISITES:
+==============
+1. Node.js (v18 or higher) - Download from https://nodejs.org/
+2. npm (comes with Node.js)
+3. Git (for version control) - Download from https://git-scm.com/
+4. A code editor (VS Code recommended) - Download from https://code.visualstudio.com/
+
+Verify Installation:
+  node --version
+  npm --version
+  git --version
+
+
+INITIAL SETUP:
+==============
+
+1. Clone the repository:
+   git clone https://github.com/23071A0537/NODUES.git
+   cd NODUES
+
+2. Verify folder structure:
+   - BACKEND/ (Node.js backend with Express)
+   - FRONTEND/ (React frontend with TypeScript)
+   - DEV_NOTES/ (Documentation and guides)
+
+
+================================================================================
+                            BACKEND SETUP
+================================================================================
+
+FOLDER: BACKEND/
+MAIN FILE: server.js
+
+BACKEND DEPENDENCIES & INSTALLATION:
+====================================
+
+Navigate to backend folder:
+  cd BACKEND
+
+Install all dependencies:
+  npm install
+
+Alternatively, install packages individually (if needed):
+
+Core Framework & Server:
+  npm install express@^5.2.1
+  npm install cors@^2.8.5
+
+Database & ORM:
+  npm install @neondatabase/serverless@^1.0.2
+  npm install axios@^1.13.2
+
+Authentication & Security:
+  npm install bcrypt@^6.0.0
+  npm install jsonwebtoken@^9.0.3
+  npm install helmet@^8.1.0
+  npm install @arcjet/node@^1.0.0-beta.16
+
+Environment & Config:
+  npm install dotenv@^17.2.3
+
+File Upload & Processing:
+  npm install multer@^2.0.2
+  npm install pdfkit@^0.17.2
+
+Third-party APIs:
+  npm install googleapis@^171.4.0
+  npm install twilio@^5.12.1
+
+Utilities:
+  npm install cookie-parser@^1.4.7
+  npm install morgan@^1.10.1
+  npm install node-cron@^4.2.1
+  npm install uuid@^13.0.0
+
+Development Tools (Dev Dependencies):
+  npm install --save-dev nodemon@^3.1.11
+
+ENVIRONMENT SETUP:
+==================
+
+Create a .env file in BACKEND/ folder with:
+  DB_CONNECTION_STRING=your_db_url
+  JWT_SECRET=your_jwt_secret
+  GOOGLE_DRIVE_CLIENT_ID=your_google_client_id
+  GOOGLE_DRIVE_CLIENT_SECRET=your_google_secret
+  GOOGLE_DRIVE_REFRESH_TOKEN=your_refresh_token
+  TWILIO_ACCOUNT_SID=your_twilio_sid
+  TWILIO_AUTH_TOKEN=your_twilio_token
+  TWILIO_PHONE_NUMBER=your_twilio_number
+  FAST2SMS_API_KEY=your_fast2sms_key
+  PORT=3001
+
+BACKEND SCRIPTS:
+================
+
+Development mode (with auto-reload):
+  npm run dev
+
+Production mode:
+  npm start
+
+Test Google Drive integration:
+  npm run test:drive
+
+Get Google Drive refresh token:
+  npm run auth:drive
+
+Reset all faculty passwords:
+  npm run reset:faculty-passwords
+
+
+================================================================================
+                            FRONTEND SETUP
+================================================================================
+
+FOLDER: FRONTEND/
+MAIN FILE: src/main.tsx
+
+FRONTEND DEPENDENCIES & INSTALLATION:
+=====================================
+
+Navigate to frontend folder:
+  cd FRONTEND
+
+Install all dependencies:
+  npm install
+
+Alternatively, install packages individually (if needed):
+
+Core Framework:
+  npm install react@^18.2.0
+  npm install react-dom@^18.2.0
+  npm install react-router-dom@^6.22.0
+
+UI & Styling:
+  npm install tailwindcss@^3.4.1
+  npm install daisyui@^4.12.24
+  npm install autoprefixer@^10.4.17
+  npm install postcss@^8.4.35
+
+Components & Icons:
+  npm install lucide-react@^0.344.0
+  npm install react-hot-toast@^2.4.1
+
+Data Visualization:
+  npm install recharts@^3.8.0
+
+Data Processing:
+  npm install xlsx@^0.18.5
+  npm install qrcode.react@^3.1.0
+
+State Management:
+  npm install zustand@^4.5.0
+
+Build & Development Tools (Dev Dependencies):
+  npm install --save-dev vite@^5.1.4
+  npm install --save-dev @vitejs/plugin-react@^4.2.1
+  npm install --save-dev typescript@^5.2.2
+  npm install --save-dev @types/react@^18.2.56
+  npm install --save-dev @types/react-dom@^18.2.19
+  npm install --save-dev eslint@^8.56.0
+  npm install --save-dev @typescript-eslint/eslint-plugin@^7.0.2
+  npm install --save-dev @typescript-eslint/parser@^7.0.2
+  npm install --save-dev eslint-plugin-react-hooks@^4.6.0
+  npm install --save-dev eslint-plugin-react-refresh@^0.4.5
+
+FRONTEND SCRIPTS:
+=================
+
+Development mode (hot reload):
+  npm run dev
+
+Build for production:
+  npm run build
+
+Preview production build:
+  npm run preview
+
+Run ESLint:
+  npm run lint
+
+
+================================================================================
+                        QUICK START COMMANDS
+================================================================================
+
+For Complete Project Setup:
+
+1. Clone the repo:
+   git clone https://github.com/23071A0537/NODUES.git
+   cd NODUES
+
+2. Setup Backend:
+   cd BACKEND
+   npm install
+   # Create .env file with required environment variables
+   npm run dev
+
+3. In a new terminal, Setup Frontend:
+   cd FRONTEND
+   npm install
+   npm run dev
+
+4. Access the application:
+   Frontend: http://localhost:5173
+   Backend API: http://localhost:3001
+
+
+BACKEND STACK:
+==============
+- Runtime: Node.js
+- Framework: Express.js
+- Database: PostgreSQL (via Neon)
+- Authentication: JWT + Bcrypt
+- APIs: Google Drive, Twilio, Fast2SMS
+- Security: Helmet, Arcjet, CORS
+- Monitoring: Morgan
+
+
+FRONTEND STACK:
+===============
+- Framework: React 18
+- Language: TypeScript
+- Bundler: Vite
+- Styling: Tailwind CSS + DaisyUI
+- State Management: Zustand
+- Routing: React Router v6
+- Charts: Recharts
+- Icons: Lucide React
+- Linting: ESLint
+
+
+COMMON ISSUES & SOLUTIONS:
+==========================
+
+Issue: "npm: command not found"
+Solution: Install Node.js from https://nodejs.org/
+
+Issue: Port 3001 or 5173 already in use
+Solution: Kill existing process or change PORT in .env
+
+Issue: Database connection fails
+Solution: Check DB_CONNECTION_STRING in .env file
+
+Issue: Environment variables not loading
+Solution: Ensure .env file is in correct folder (BACKEND/)
+
+Issue: Google Drive upload fails
+Solution: Verify GOOGLE_DRIVE credentials and REFRESH_TOKEN in .env
+
+
+DEBUGGING TIPS:
+===============
+
+1. Check backend logs:
+   npm run dev (in BACKEND folder)
+
+2. Check frontend console:
+   Open browser DevTools (F12) -> Console tab
+
+3. Check network requests:
+   Browser DevTools -> Network tab
+
+4. Database queries:
+   Check backend logs for SQL execution
+
+
+USEFUL LINKS:
+=============
+
+Node.js: https://nodejs.org/
+npm: https://www.npmjs.com/
+Express.js: https://expressjs.com/
+React: https://react.dev/
+Vite: https://vitejs.dev/
+Tailwind CSS: https://tailwindcss.com/
+TypeScript: https://www.typescriptlang.org/
+PostgreSQL: https://www.postgresql.org/
+
+
+================================================================================
+                        FOR YOUR UNDERSTANDING
+================================================================================
+
+BACKEND handles:
+- User authentication & authorization
+- Database operations (CRUD)
+- Payment processing
+- File uploads to Google Drive
+- SMS notifications via Twilio
+- Interest calculations for dues
+- API endpoints for frontend
+
+FRONTEND handles:
+- User Interface & User Experience
+- Displaying data from backend
+- Form submissions & validations
+- Real-time updates
+- Role-based dashboards (Student, Faculty, Operator, Admin, HR, HOD)
+- Payment processing UI
+- Report generation
+
+
+FOLDER STRUCTURE:
+=================
+
+BACKEND/
+├── config/          (Database & Multer configuration)
+├── controllers/     (Business logic for each role)
+├── middleware/      (Authentication, validation, error handling)
+├── migrations/      (Database schema changes)
+├── routes/          (API endpoints)
+├── services/        (Google Drive, SMS, Interest calculation)
+├── utils/           (Helper functions, database utilities)
+├── jobs/            (Background jobs like SMS reminders)
+├── seeds/           (Initial data for testing)
+├── scripts/         (Utility scripts)
+├── server.js        (Main server file)
+└── package.json     (Dependencies)
+
+FRONTEND/
+├── src/
+│   ├── pages/       (Page components for each role)
+│   ├── components/  (Reusable UI components)
+│   ├── store/       (State management with Zustand)
+│   ├── utils/       (API calls, helpers)
+│   ├── assets/      (Images, logos)
+│   ├── App.tsx      (Main app component)
+│   └── main.tsx     (Entry point)
+├── index.html       (HTML template)
+├── tailwind.config.js    (Tailwind configuration)
+├── tsconfig.json    (TypeScript config)
+├── vite.config.ts   (Vite config)
+└── package.json     (Dependencies)
+
+
+================================================================================
+                           HAPPY CODING! 🚀
+                    Welcome to the NODUES Project Team!
+================================================================================
