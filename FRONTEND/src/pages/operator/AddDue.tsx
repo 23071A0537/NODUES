@@ -1672,23 +1672,33 @@ const AddDue = () => {
                     <p className="text-sm text-base-content/70 mb-1">
                       {isForFaculty ? "Faculty Name" : "Student Name"}
                     </p>
-                    <p className="font-bold">{personLookup?.name || "Not available"}</p>
+                    <p className="font-bold">
+                      {personLookup?.name || "Not available"}
+                    </p>
                   </div>
 
                   <div className="bg-base-100 rounded-lg p-3">
-                    <p className="text-sm text-base-content/70 mb-1">Due Type</p>
-                    <p className="font-bold">{selectedDueTypeObj?.type_name || "-"}</p>
+                    <p className="text-sm text-base-content/70 mb-1">
+                      Due Type
+                    </p>
+                    <p className="font-bold">
+                      {selectedDueTypeObj?.type_name || "-"}
+                    </p>
                   </div>
 
                   <div className="bg-base-100 rounded-lg p-3">
                     <p className="text-sm text-base-content/70 mb-1">
                       Payment Type
                     </p>
-                    <p className="font-bold">{isPayable ? "Payable" : "Non-Payable"}</p>
+                    <p className="font-bold">
+                      {isPayable ? "Payable" : "Non-Payable"}
+                    </p>
                   </div>
 
                   <div className="bg-base-100 rounded-lg p-3">
-                    <p className="text-sm text-base-content/70 mb-1">Due Date</p>
+                    <p className="text-sm text-base-content/70 mb-1">
+                      Due Date
+                    </p>
                     <p className="font-bold">
                       {new Date(dueDate).toLocaleDateString("en-IN", {
                         year: "numeric",
@@ -1700,7 +1710,9 @@ const AddDue = () => {
 
                   {isPayable && (
                     <div className="bg-base-100 rounded-lg p-3">
-                      <p className="text-sm text-base-content/70 mb-1">Amount</p>
+                      <p className="text-sm text-base-content/70 mb-1">
+                        Amount
+                      </p>
                       <p className="font-bold text-primary">₹{amount}</p>
                     </div>
                   )}
@@ -1731,7 +1743,11 @@ const AddDue = () => {
                         Document Type
                       </p>
                       <p className="font-bold">
-                        {needsOriginal ? "Original" : needsPdf ? "PDF" : "Not specified"}
+                        {needsOriginal
+                          ? "Original"
+                          : needsPdf
+                            ? "PDF"
+                            : "Not specified"}
                       </p>
                     </div>
                   )}
@@ -1739,14 +1755,18 @@ const AddDue = () => {
 
                 {dueDescription && (
                   <div className="bg-base-100 rounded-lg p-3">
-                    <p className="text-sm text-base-content/70 mb-1">Description</p>
+                    <p className="text-sm text-base-content/70 mb-1">
+                      Description
+                    </p>
                     <p>{dueDescription}</p>
                   </div>
                 )}
 
                 {proofLink && (
                   <div className="bg-base-100 rounded-lg p-3">
-                    <p className="text-sm text-base-content/70 mb-1">Proof Link</p>
+                    <p className="text-sm text-base-content/70 mb-1">
+                      Proof Link
+                    </p>
                     <a
                       href={proofLink}
                       target="_blank"
