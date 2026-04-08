@@ -1,0 +1,38 @@
+{
+  "name": "nodues_final",
+  "version": "1.0.0",
+  "description": "",
+  "main": "backend/server.js",
+  "scripts": {
+    "dev": "nodemon backend/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@arcjet/node": "^1.0.0-beta.16",
+    "@neondatabase/serverless": "^1.0.2",
+    "axios": "^1.13.2",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "googleapis": "^171.4.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^0.562.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
+    "nodemon": "^3.1.11",
+    "pdfkit": "^0.17.2",
+    "react-hot-toast": "^2.6.0",
+    "react-router-dom": "^7.12.0",
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.10"
+  },
+  "devDependencies": {
+    "daisyui": "^4.12.24"
+  }
+}

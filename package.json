@@ -1,0 +1,38 @@
+{
+  "name": "nodues-system",
+  "version": "1.0.0",
+  "description": "No Dues Management System - Full Stack Application",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd BACKEND && npm run dev",
+    "dev:frontend": "cd FRONTEND && npm run dev",
+    "start:backend": "cd BACKEND && npm start",
+    "start:frontend": "cd FRONTEND && npm run preview",
+    "build:frontend": "cd FRONTEND && npm run build",
+    "test:drive": "cd BACKEND && npm run test:drive",
+    "auth:drive": "cd BACKEND && npm run auth:drive",
+    "reset:faculty-passwords": "cd BACKEND && npm run reset:faculty-passwords"
+  },
+  "keywords": [
+    "nodues",
+    "management",
+    "system",
+    "student",
+    "clearance"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "@arcjet/node": "^1.2.0",
+    "@neondatabase/serverless": "^1.0.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1"
+  }
+}

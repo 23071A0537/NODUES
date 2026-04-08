@@ -1,0 +1,39 @@
+For this application we used PERN stack that is 
+P - Postgresql(Relation DB)
+E - Express
+R - React
+N - Node js
+
+Step 1:
+Make the BACKEND, FRONTEND folder and then run the commad:
+npm init -y => for package.json
+
+Step 2:
+Install packages
+npm i express dotenv cors helmet morgan @neondatabase/serverless @arcjet/node
+
+->express → Minimal Node.js framework for building web servers and REST APIs.
+->dotenv → Loads environment variables from a .env file into process.env.
+->cors → Enables cross-origin requests between frontend and backend.
+->helmet → Secures Express apps by setting safe HTTP headers.
+->morgan → Logs HTTP requests for debugging and monitoring.
+->@neondatabase/serverless → Serverless PostgreSQL client for Neon cloud databases.
+->@arcjet/node → Protects APIs with rate limiting, bot detection, and abuse prevention.
+
+Step 3:
+change the main field to "backend/server.js" and type field tp "module" in package.json
+
+Step 4:
+npm i nodemon
+->nodemon → Automatically restarts the Node.js server when file changes are detected during development.
+
+Step 4:
+In script field in package.json remove the test field and add "dev": "nodemon backend/server.js"
+
+
+
+# Terminal 1
+cd FRONTEND && npm run dev:student
+
+# Terminal 2
+cd FRONTEND && npm run dev:teacher
