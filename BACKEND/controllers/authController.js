@@ -3,8 +3,8 @@ import jwt from "jsonwebtoken";
 import { sql } from "../config/db.js";
 import { clearSession } from "../middleware/sessionTimeout.js";
 import {
-  getTokenClearCookieOptions,
-  getTokenCookieOptions,
+    getTokenClearCookieOptions,
+    getTokenCookieOptions,
 } from "../utils/authCookie.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';

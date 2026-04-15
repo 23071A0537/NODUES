@@ -293,7 +293,8 @@ const AlumniBulkDueForm = ({ user }: AlumniBulkDueFormProps) => {
                 Alumni dues created for {result.academic_year_label}
               </p>
               <p className="text-sm">
-                Total Students: {result.total_students} | Created: {result.created_count} | Skipped: {result.skipped_count}
+                Total Students: {result.total_students} | Created:{" "}
+                {result.created_count} | Skipped: {result.skipped_count}
               </p>
             </div>
           </div>
