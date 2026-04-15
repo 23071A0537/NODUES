@@ -3,6 +3,8 @@
  * Tracks user activity and enforces session timeout after 3 minutes of inactivity
  */
 
+import { getTokenClearCookieOptions } from '../utils/authCookie.js';
+
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
 
 // In-memory store for session activity (in production, use Redis or database)
@@ -40,7 +42,7 @@ export const checkSessionTimeout = (req, res, next) => {
 
   if (timeSinceActivity > SESSION_TIMEOUT) {
     // Session expired - clear cookies and session
-    res.clearCookie('token');
+    res.clearCookie('token', getTokenClearCookieOptions());
     sessionActivity.delete(sessionKey);
     
     return res.status(401).json({

@@ -372,7 +372,7 @@ export const processMockPayment = async (req, res) => {
             due_clear_by_date,
             created_at,
             is_payable
-          FROM student_dues
+          FROM department_dues
           WHERE id = ANY(${session.due_ids}) AND student_roll_number = (
             SELECT roll_number FROM students WHERE student_id = ${session.student_id}
           )
@@ -439,9 +439,9 @@ export const processMockPayment = async (req, res) => {
             )
           `;
 
-          // Update student due with new principal and reset timestamp
+          // Update department due with new principal and reset timestamp
           await tx`
-            UPDATE student_dues 
+            UPDATE department_dues 
             SET principal_amount = ${paymentResult.newPrincipal},
                 amount_paid = ${paymentResult.newAmountPaid},
                 created_at = ${paymentResult.newCreatedAt},
@@ -506,15 +506,15 @@ export const handleWebhook = async (req, res) => {
     const paymentResult = await sql`
       SELECT 
         dp.*,
-        sd.student_roll_number, 
-        sd.principal_amount, 
-        sd.amount_paid,
-        sd.is_compounded,
-        sd.interest_rate,
-        sd.due_clear_by_date,
-        sd.created_at
+        dd.student_roll_number, 
+        dd.principal_amount, 
+        dd.amount_paid,
+        dd.is_compounded,
+        dd.interest_rate,
+        dd.due_clear_by_date,
+        dd.created_at
       FROM due_payments dp
-      JOIN student_dues sd ON dp.due_id = sd.id
+      JOIN department_dues dd ON dp.due_id = dd.id
       WHERE dp.payment_reference = ${payment_reference}
     `;
 
@@ -536,7 +536,7 @@ export const handleWebhook = async (req, res) => {
     if (status === 'SUCCESS') {
       // Use transaction for atomicity
       await transaction(async (tx) => {
-        // Update student dues with interest-aware logic
+        // Update department dues with interest-aware logic
         for (const payment of paymentResult) {
           const due = {
             principal_amount: payment.principal_amount,
@@ -549,7 +549,7 @@ export const handleWebhook = async (req, res) => {
           const paymentProcessed = processPayment(due, payment.paid_amount);
 
           await tx`
-            UPDATE student_dues 
+            UPDATE department_dues 
             SET principal_amount = ${paymentProcessed.newPrincipal},
                 amount_paid = ${paymentProcessed.newAmountPaid},
                 created_at = ${paymentProcessed.newCreatedAt},

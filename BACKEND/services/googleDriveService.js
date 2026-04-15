@@ -20,6 +20,9 @@ dotenv.config({ path: join(__dirname, '..', '..', '.env') });
  * - GOOGLE_DRIVE_REDIRECT_URI
  * - GOOGLE_DRIVE_REFRESH_TOKEN
  * - GOOGLE_DRIVE_DOCUMENTS_FOLDER_ID (folder for student document uploads)
+ * - GOOGLE_DRIVE_INTERNSHIP_LETTERS_FOLDER_ID (folder for internship letter copy uploads)
+ * - GOOGLE_DRIVE_OFFER_LETTERS_FOLDER_ID (folder for offer letter copy uploads)
+ * - GOOGLE_DRIVE_OTHER_DOCUMENTS_FOLDER_ID (folder for non internship/offer copy uploads)
  * - GOOGLE_DRIVE_PERMISSIONS_FOLDER_ID (folder for permission grant documents)
  * 
  * Setup Instructions:
@@ -39,7 +42,26 @@ const REFRESH_TOKEN = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
 
 // Folder IDs for different upload types
 const DOCUMENTS_FOLDER_ID = process.env.GOOGLE_DRIVE_DOCUMENTS_FOLDER_ID;
+const INTERNSHIP_LETTERS_FOLDER_ID = process.env.GOOGLE_DRIVE_INTERNSHIP_LETTERS_FOLDER_ID;
+const OFFER_LETTERS_FOLDER_ID = process.env.GOOGLE_DRIVE_OFFER_LETTERS_FOLDER_ID;
+const OTHER_DOCUMENTS_FOLDER_ID = process.env.GOOGLE_DRIVE_OTHER_DOCUMENTS_FOLDER_ID;
 const PERMISSIONS_FOLDER_ID = process.env.GOOGLE_DRIVE_PERMISSIONS_FOLDER_ID;
+
+const resolveFolderIdForUploadType = (uploadType) => {
+  switch (uploadType) {
+    case 'permission':
+      return PERMISSIONS_FOLDER_ID;
+    case 'internship-document':
+      return INTERNSHIP_LETTERS_FOLDER_ID || OTHER_DOCUMENTS_FOLDER_ID || DOCUMENTS_FOLDER_ID;
+    case 'offer-document':
+      return OFFER_LETTERS_FOLDER_ID || OTHER_DOCUMENTS_FOLDER_ID || DOCUMENTS_FOLDER_ID;
+    case 'other-document':
+      return OTHER_DOCUMENTS_FOLDER_ID || DOCUMENTS_FOLDER_ID;
+    case 'document':
+    default:
+      return DOCUMENTS_FOLDER_ID;
+  }
+};
 
 /**
  * Initialize OAuth2 client
@@ -63,7 +85,7 @@ const drive = google.drive({ version: 'v3', auth: oauth2Client });
  * @param {Object} fileObject - File object with buffer, originalname, mimetype
  * @param {string} dueId - Due ID
  * @param {string} studentRollNumber - Student roll number
- * @param {string} uploadType - 'document' or 'permission'
+ * @param {string} uploadType - one of 'document', 'permission', 'internship-document', 'offer-document', or 'other-document'
  * @returns {Promise<Object>} - Drive file metadata with webViewLink
  */
 export const uploadToGoogleDrive = async (fileObject, dueId, studentRollNumber, uploadType = 'document') => {
@@ -73,13 +95,11 @@ export const uploadToGoogleDrive = async (fileObject, dueId, studentRollNumber, 
       throw new Error('Google Drive API credentials not configured. Please check .env file.');
     }
 
-    // Determine target folder
-    const folderId = uploadType === 'permission' 
-      ? PERMISSIONS_FOLDER_ID 
-      : DOCUMENTS_FOLDER_ID;
+    // Determine target folder based on upload type routing
+    const folderId = resolveFolderIdForUploadType(uploadType);
 
     if (!folderId) {
-      throw new Error(`Google Drive folder ID not configured for ${uploadType} uploads`);
+      throw new Error(`Google Drive folder ID not configured for upload type: ${uploadType}`);
     }
 
     // Generate filename: {due_id}_{student_roll_number}.{extension}

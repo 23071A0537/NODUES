@@ -74,17 +74,30 @@ const HEADER_IMAGE_SIZE = 70;
 
 export const fetchActiveIssuerNamesForStudent = async (rollNumber) => {
   const results = await sql`
-    SELECT DISTINCT
-      CASE
-        WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-        ELSE sec.name
-      END as issuer_name
-    FROM student_dues sd
-    LEFT JOIN departments d ON sd.added_by_department_id = d.id
-    LEFT JOIN sections sec ON sd.added_by_section_id = sec.id
-    WHERE sd.student_roll_number = ${rollNumber}
-      AND sd.overall_status = FALSE
-      AND (sd.added_by_department_id IS NOT NULL OR sd.added_by_section_id IS NOT NULL)
+    SELECT DISTINCT issuer_name
+    FROM (
+      SELECT d.name as issuer_name
+      FROM department_dues dd
+      LEFT JOIN departments d ON dd.added_by_department_id = d.id
+      WHERE dd.student_roll_number = ${rollNumber}
+        AND dd.overall_status = FALSE
+
+      UNION ALL
+
+      SELECT 'Head of the Department' as issuer_name
+      FROM department_dues dd
+      WHERE dd.student_roll_number = ${rollNumber}
+        AND dd.overall_status = FALSE
+
+      UNION ALL
+
+      SELECT sec.name as issuer_name
+      FROM alumni_dues ad
+      LEFT JOIN sections sec ON ad.added_by_section_id = sec.id
+      WHERE ad.student_roll_number = ${rollNumber}
+        AND ad.overall_status = FALSE
+        AND ad.added_by_section_id IS NOT NULL
+    ) issuer_rows
   `;
 
   return results
@@ -155,28 +168,27 @@ const drawTable = (doc, rows) => {
   const startX = margin;
   let currentY = doc.y + 10;
   const tableWidth = doc.page.width - margin * 2;
-  const colWidths = [50, 250, 90, 125];
+  const colWidths = [280, 95, 140];
 
   const header = [
-    "S. No.",
     "Name of the Department/Section",
     "Dues (Yes/No)",
     "Signature with date",
   ];
   const allRows = [
     header,
-    ...rows.map((row) => ["", row.label, row.hasDue ? "YES" : "NO", ""]),
+    ...rows.map((row) => [row.label, row.hasDue ? "YES" : "NO", ""]),
   ];
 
   if (rows.length === 0) {
-    allRows.push(["", "No additional departments/sections", "NO", ""]);
+    allRows.push(["No additional departments/sections", "NO", ""]);
   }
 
   allRows.forEach((row, index) => {
     const isHeader = index === 0;
     const values = Array.isArray(row)
       ? row
-      : ["", row.label || String(row), row.hasDue ? "YES" : "NO", ""];
+      : [row.label || String(row), row.hasDue ? "YES" : "NO", ""];
     while (values.length < colWidths.length) {
       values.push("");
     }
@@ -197,7 +209,7 @@ const drawTable = (doc, rows) => {
         .fontSize(10)
         .text(String(value), x + 5, currentY + 5, {
           width: colWidths[colIndex] - 10,
-          align: colIndex === 0 ? "center" : "left",
+          align: colIndex === 1 ? "center" : "left",
         });
       x += colWidths[colIndex];
     });

@@ -24,6 +24,15 @@ export interface Due {
   created_at: string;
   updated_at: string;
   added_by_entity: string;
+  is_alumni_due?: boolean;
+  is_form_submitted?: boolean;
+  submitted_at?: string | null;
+  status_of_registration_with_alumni_portal?: string | null;
+  linkedin_profile_link?: string | null;
+  placement_status?: string | null;
+  proof_of_placement?: string | null;
+  planning_for_higher_education?: string | null;
+  proof_of_higher_education?: string | null;
   status_badge:
     | "payable"
     | "scholarship_approved"

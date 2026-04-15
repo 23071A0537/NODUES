@@ -6,3 +6,4 @@ export { default as Dashboard } from "./Dashboard";
 export { default as FacultyDues } from "./FacultyDues";
 export { default as PendingApprovals } from "./PendingApprovals";
 export { default as SmsDashboard } from "./SmsDashboard";
+export { default as StudentsWithDues } from "./StudentsWithDues";

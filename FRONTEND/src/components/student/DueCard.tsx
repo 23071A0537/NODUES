@@ -13,6 +13,8 @@ interface DueCardProps {
   onPay?: (dueId: number) => void;
 }
 
+type YesNo = "Y" | "N";
+
 const statusConfig: Record<
   string,
   { bg: string; text: string; label: string; icon: string }
@@ -61,6 +63,16 @@ export default function DueCard({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
+  const [showAlumniFormModal, setShowAlumniFormModal] = useState(false);
+  const [alumniSubmitting, setAlumniSubmitting] = useState(false);
+  const [alumniForm, setAlumniForm] = useState({
+    registrationWithAlumniPortal: "N" as YesNo,
+    linkedinProfileLink: "",
+    placementStatus: "N" as YesNo,
+    proofOfPlacement: "",
+    planningHigherEducation: "N" as YesNo,
+    proofOfHigherEducation: "",
+  });
 
   const status = statusConfig[due.status_badge] || statusConfig.info;
   const isOverdue =
@@ -73,6 +85,151 @@ export default function DueCard({
     !due.is_cleared &&
     due.outstanding_amount > 0;
   const needsPermission = due.requires_permission && !due.permission_granted;
+
+  const isAlumniFormDue =
+    Boolean(due.is_alumni_due) ||
+    due.type_name?.toLowerCase().includes("alumini form") ||
+    due.type_name?.toLowerCase().includes("alumni form");
+
+  const isInternalAlumniBulkMetadata = (value?: string | null) => {
+    if (!value) {
+      return false;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+      return false;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed?.form_type === "alumni_bulk_due";
+    } catch {
+      return false;
+    }
+  };
+
+  const sanitizedRemarks =
+    isAlumniFormDue && isInternalAlumniBulkMetadata(due.remarks)
+      ? null
+      : due.remarks;
+
+  const needsAlumniFormSubmission =
+    isAlumniFormDue && !due.is_form_submitted && !due.is_cleared;
+  const hasSubmittedAlumniForm =
+    isAlumniFormDue && (Boolean(due.is_form_submitted) || due.is_cleared);
+
+  const isValidHttpUrl = (value: string) => {
+    if (!value) {
+      return true;
+    }
+
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+
+  const openAlumniFormModal = () => {
+    setAlumniForm({
+      registrationWithAlumniPortal:
+        due.status_of_registration_with_alumni_portal === "Y" ? "Y" : "N",
+      linkedinProfileLink: due.linkedin_profile_link || "",
+      placementStatus: due.placement_status === "Y" ? "Y" : "N",
+      proofOfPlacement: due.proof_of_placement || "",
+      planningHigherEducation:
+        due.planning_for_higher_education === "Y" ? "Y" : "N",
+      proofOfHigherEducation: due.proof_of_higher_education || "",
+    });
+    setShowAlumniFormModal(true);
+  };
+
+  const handleSubmitAlumniForm = async () => {
+    if (!alumniForm.linkedinProfileLink.trim()) {
+      alert("LinkedIn Profile Link is required");
+      return;
+    }
+
+    if (!isValidHttpUrl(alumniForm.linkedinProfileLink.trim())) {
+      alert("LinkedIn Profile Link must be a valid URL");
+      return;
+    }
+
+    if (
+      alumniForm.placementStatus === "Y" &&
+      !alumniForm.proofOfPlacement.trim()
+    ) {
+      alert("Proof of Placement is required when Placement Status is Y");
+      return;
+    }
+
+    if (
+      alumniForm.proofOfPlacement.trim() &&
+      !isValidHttpUrl(alumniForm.proofOfPlacement.trim())
+    ) {
+      alert("Proof of Placement must be a valid URL");
+      return;
+    }
+
+    if (
+      alumniForm.planningHigherEducation === "Y" &&
+      !alumniForm.proofOfHigherEducation.trim()
+    ) {
+      alert(
+        "Proof of Higher Education is required when Planning for Higher Education is Y",
+      );
+      return;
+    }
+
+    if (
+      alumniForm.proofOfHigherEducation.trim() &&
+      !isValidHttpUrl(alumniForm.proofOfHigherEducation.trim())
+    ) {
+      alert("Proof of Higher Education must be a valid URL");
+      return;
+    }
+
+    try {
+      setAlumniSubmitting(true);
+
+      const response = await fetch(`/api/student/dues/${due.id}/alumni-form`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          registration_with_alumni_portal:
+            alumniForm.registrationWithAlumniPortal,
+          linkedin_profile_link: alumniForm.linkedinProfileLink.trim(),
+          placement_status: alumniForm.placementStatus,
+          proof_of_placement: alumniForm.proofOfPlacement.trim() || null,
+          planning_higher_education: alumniForm.planningHigherEducation,
+          proof_of_higher_education:
+            alumniForm.proofOfHigherEducation.trim() || null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to submit alumni form");
+      }
+
+      alert("Alumni form submitted successfully.");
+      setShowAlumniFormModal(false);
+      window.location.reload();
+    } catch (error) {
+      console.error("Error submitting alumni form:", error);
+      alert(
+        error instanceof Error ? error.message : "Failed to submit alumni form",
+      );
+    } finally {
+      setAlumniSubmitting(false);
+    }
+  };
 
   const handleUploadDocument = async () => {
     if (!selectedFile) {
@@ -149,7 +306,8 @@ export default function DueCard({
     }
   };
 
-  const hasRejection = due.remarks && !due.proof_drive_link;
+  const hasRejection =
+    !isAlumniFormDue && sanitizedRemarks && !due.proof_drive_link;
   const needsUpload =
     !due.is_payable &&
     due.needs_pdf &&
@@ -284,10 +442,46 @@ export default function DueCard({
                       Action Type
                     </p>
                     <p className="mt-0.5 text-sm font-semibold text-base-content">
-                      {due.is_payable ? "Payment" : "Document Submission"}
+                      {due.is_payable
+                        ? "Payment"
+                        : needsAlumniFormSubmission
+                          ? "Alumni Form Submission"
+                          : "Document Submission"}
                     </p>
                   </div>
                 </div>
+
+                {needsAlumniFormSubmission && (
+                  <div className="mt-3 rounded-lg border border-primary/35 bg-primary/10 p-3">
+                    <p className="text-sm font-semibold text-base-content">
+                      Alumni Form Pending
+                    </p>
+                    <p className="mt-1 text-xs text-base-content/75">
+                      Fill the alumni details to complete this due.
+                    </p>
+                    <button
+                      onClick={openAlumniFormModal}
+                      className="btn btn-primary btn-sm mt-2"
+                    >
+                      Fill Alumni Form
+                    </button>
+                  </div>
+                )}
+
+                {hasSubmittedAlumniForm && (
+                  <div className="mt-3 rounded-lg border border-success/35 bg-success/10 p-3">
+                    <p className="text-sm font-semibold text-base-content">
+                      Alumni Form Submitted
+                    </p>
+                    <p className="mt-1 text-xs text-base-content/75">
+                      Submitted{" "}
+                      {due.submitted_at
+                        ? formatDate(due.submitted_at)
+                        : "successfully"}
+                      .
+                    </p>
+                  </div>
+                )}
 
                 {needsUpload && (
                   <div className="mt-3 rounded-lg border border-info/35 bg-info/10 p-3">
@@ -313,7 +507,7 @@ export default function DueCard({
                       Document Rejected
                     </p>
                     <p className="mt-1 text-xs text-base-content/75">
-                      Reason: {due.remarks}
+                      Reason: {sanitizedRemarks}
                     </p>
                     <p className="mt-1 text-xs font-semibold text-base-content/80">
                       Please correct and upload again.
@@ -421,7 +615,9 @@ export default function DueCard({
               <p className="mt-2 text-sm text-base-content/70">
                 {due.is_payable
                   ? "This due is not payable right now."
-                  : "Complete required document workflow."}
+                  : needsAlumniFormSubmission
+                    ? "Complete the alumni form to finish this due."
+                    : "Complete required document workflow."}
               </p>
             )}
 
@@ -519,25 +715,29 @@ export default function DueCard({
             {!due.is_payable && (
               <div className="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
                 <p className="text-xs uppercase tracking-[0.09em] text-base-content/55">
-                  Document Requirement
+                  {isAlumniFormDue
+                    ? "Alumni Form Requirement"
+                    : "Document Requirement"}
                 </p>
                 <p className="mt-1 font-semibold text-base-content">
-                  {due.needs_original
-                    ? "Original document submission is required"
-                    : due.needs_pdf
-                      ? "PDF submission is required"
-                      : "Document submission is required"}
+                  {isAlumniFormDue
+                    ? "Submit Alumni form details from your student portal."
+                    : due.needs_original
+                      ? "Original document submission is required"
+                      : due.needs_pdf
+                        ? "PDF submission is required"
+                        : "Document submission is required"}
                 </p>
               </div>
             )}
 
-            {due.remarks && (
+            {sanitizedRemarks && (
               <div className="mt-3 rounded-lg border border-base-300 bg-base-100 p-3">
                 <p className="text-xs uppercase tracking-[0.09em] text-base-content/55">
                   Remarks
                 </p>
                 <p className="mt-1 font-medium text-base-content">
-                  {due.remarks}
+                  {sanitizedRemarks}
                 </p>
               </div>
             )}
@@ -558,6 +758,164 @@ export default function DueCard({
         )}
       </div>
 
+      {/* Alumni Form Modal */}
+      {showAlumniFormModal && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="font-bold text-lg mb-4">Submit Alumni Form</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">
+                    Status of Registration with Alumni Portal (Y/N)
+                  </span>
+                </label>
+                <select
+                  className="select select-bordered"
+                  value={alumniForm.registrationWithAlumniPortal}
+                  onChange={(event) =>
+                    setAlumniForm((prev) => ({
+                      ...prev,
+                      registrationWithAlumniPortal: event.target.value as YesNo,
+                    }))
+                  }
+                  disabled={alumniSubmitting}
+                >
+                  <option value="Y">Y</option>
+                  <option value="N">N</option>
+                </select>
+              </div>
+
+              <div className="form-control md:col-span-2">
+                <label className="label">
+                  <span className="label-text">LinkedIn Profile Link *</span>
+                </label>
+                <input
+                  type="url"
+                  className="input input-bordered"
+                  placeholder="https://www.linkedin.com/in/..."
+                  value={alumniForm.linkedinProfileLink}
+                  onChange={(event) =>
+                    setAlumniForm((prev) => ({
+                      ...prev,
+                      linkedinProfileLink: event.target.value,
+                    }))
+                  }
+                  disabled={alumniSubmitting}
+                  required
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Placement Status (Y/N)</span>
+                </label>
+                <select
+                  className="select select-bordered"
+                  value={alumniForm.placementStatus}
+                  onChange={(event) =>
+                    setAlumniForm((prev) => ({
+                      ...prev,
+                      placementStatus: event.target.value as YesNo,
+                    }))
+                  }
+                  disabled={alumniSubmitting}
+                >
+                  <option value="Y">Y</option>
+                  <option value="N">N</option>
+                </select>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">
+                    Proof of Placement
+                    {alumniForm.placementStatus === "Y" ? " *" : ""}
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  className="input input-bordered"
+                  placeholder="https://..."
+                  value={alumniForm.proofOfPlacement}
+                  onChange={(event) =>
+                    setAlumniForm((prev) => ({
+                      ...prev,
+                      proofOfPlacement: event.target.value,
+                    }))
+                  }
+                  disabled={alumniSubmitting}
+                  required={alumniForm.placementStatus === "Y"}
+                />
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">
+                    Planning for Higher Education (Y/N)
+                  </span>
+                </label>
+                <select
+                  className="select select-bordered"
+                  value={alumniForm.planningHigherEducation}
+                  onChange={(event) =>
+                    setAlumniForm((prev) => ({
+                      ...prev,
+                      planningHigherEducation: event.target.value as YesNo,
+                    }))
+                  }
+                  disabled={alumniSubmitting}
+                >
+                  <option value="Y">Y</option>
+                  <option value="N">N</option>
+                </select>
+              </div>
+
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">
+                    Proof of Higher Education
+                    {alumniForm.planningHigherEducation === "Y" ? " *" : ""}
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  className="input input-bordered"
+                  placeholder="https://..."
+                  value={alumniForm.proofOfHigherEducation}
+                  onChange={(event) =>
+                    setAlumniForm((prev) => ({
+                      ...prev,
+                      proofOfHigherEducation: event.target.value,
+                    }))
+                  }
+                  disabled={alumniSubmitting}
+                  required={alumniForm.planningHigherEducation === "Y"}
+                />
+              </div>
+            </div>
+
+            <div className="modal-action">
+              <button
+                onClick={handleSubmitAlumniForm}
+                className={`btn btn-primary ${alumniSubmitting ? "loading" : ""}`}
+                disabled={alumniSubmitting}
+              >
+                {alumniSubmitting ? "Submitting..." : "Submit Alumni Form"}
+              </button>
+              <button
+                onClick={() => setShowAlumniFormModal(false)}
+                className="btn"
+                disabled={alumniSubmitting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Document Modal */}
       {showUploadModal && (
         <div className="modal modal-open">
@@ -570,7 +928,7 @@ export default function DueCard({
               <div className="alert alert-error mb-4">
                 <div>
                   <p className="font-semibold">Previous Rejection Reason:</p>
-                  <p className="text-sm">{due.remarks}</p>
+                  <p className="text-sm">{sanitizedRemarks}</p>
                 </div>
               </div>
             )}

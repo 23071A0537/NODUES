@@ -10,6 +10,61 @@ import {
     renderNoDuesFormPdf,
 } from '../utils/noDuesForm.js';
 
+const normalizeYesNoField = (value) => {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase();
+
+  if (['Y', 'YES', 'TRUE', '1'].includes(normalized)) {
+    return 'Y';
+  }
+
+  if (['N', 'NO', 'FALSE', '0'].includes(normalized)) {
+    return 'N';
+  }
+
+  return null;
+};
+
+const isValidHttpUrl = (value) => {
+  if (!value) {
+    return true;
+  }
+
+  try {
+    const url = new URL(String(value).trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const parseDueIdentifier = (value) => {
+  const rawValue = String(value ?? '').trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const prefixedMatch = rawValue.match(/^(department|alumni)[:_-](\d+)$/i);
+  if (prefixedMatch) {
+    return {
+      source: prefixedMatch[1].toLowerCase(),
+      id: parseInt(prefixedMatch[2], 10),
+    };
+  }
+
+  const numericId = parseInt(rawValue, 10);
+  if (Number.isNaN(numericId)) {
+    return null;
+  }
+
+  return {
+    source: null,
+    id: numericId,
+  };
+};
+
 /**
  * Get student's active dues
  * Query params: status (payable|all), limit, offset
@@ -18,6 +73,8 @@ export const getDues = async (req, res) => {
   try {
     const studentId = req.user.user_id;
     const { status = 'payable', limit = 50, offset = 0 } = req.query;
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+    const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
     // Get student's roll number
     const studentResult = await sql`
@@ -30,47 +87,94 @@ export const getDues = async (req, res) => {
 
     const rollNumber = studentResult[0].roll_number;
 
-    // Build query based on status filter - return all dues, frontend will filter  
-    let payableFilter = status === 'payable' 
-      ? sql`AND sd.is_payable = TRUE` 
+    const payableFilter = status === 'payable'
+      ? sql`AND dues.is_payable = TRUE`
       : sql``;
 
     const result = await sql`
-      SELECT 
-        sd.id,
-        sd.due_type_id,
-        dt.type_name,
-        dt.description as type_description,
-        dt.requires_permission,
-        sd.is_payable,
-        sd.principal_amount,
-        sd.amount_paid,
-        sd.is_compounded,
-        sd.interest_rate,
-        sd.permission_granted,
-        sd.supporting_document_link,
-        sd.proof_drive_link,
-        sd.due_clear_by_date,
-        sd.is_cleared,
-        sd.overall_status,
-        sd.due_description,
-        sd.remarks,
-        sd.needs_original,
-        sd.needs_pdf,
-        sd.created_at,
-        sd.updated_at,
-        CASE 
-          WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-          ELSE s.name
-        END as added_by_entity
-      FROM student_dues sd
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      LEFT JOIN departments d ON sd.added_by_department_id = d.id
-      LEFT JOIN sections s ON sd.added_by_section_id = s.id
-      WHERE sd.student_roll_number = ${rollNumber} AND sd.is_cleared = FALSE
+      SELECT *
+      FROM (
+        SELECT 
+          dd.id,
+          dd.due_type_id,
+          dt.type_name,
+          dt.description as type_description,
+          dt.requires_permission,
+          dd.is_payable,
+          dd.principal_amount,
+          dd.amount_paid,
+          dd.is_compounded,
+          dd.interest_rate,
+          dd.permission_granted,
+          dd.supporting_document_link,
+          dd.proof_drive_link,
+          dd.due_clear_by_date,
+          dd.is_cleared,
+          dd.overall_status,
+          dd.due_description,
+          dd.remarks,
+          dd.needs_original,
+          dd.needs_pdf,
+          dd.created_at,
+          dd.updated_at,
+          d.name as added_by_entity,
+          FALSE as is_alumni_due,
+          FALSE as is_form_submitted,
+          NULL::TIMESTAMPTZ as submitted_at,
+          NULL::VARCHAR as status_of_registration_with_alumni_portal,
+          NULL::TEXT as linkedin_profile_link,
+          NULL::VARCHAR as placement_status,
+          NULL::TEXT as proof_of_placement,
+          NULL::VARCHAR as planning_for_higher_education,
+          NULL::TEXT as proof_of_higher_education
+        FROM department_dues dd
+        JOIN due_types dt ON dd.due_type_id = dt.id
+        LEFT JOIN departments d ON dd.added_by_department_id = d.id
+        WHERE dd.student_roll_number = ${rollNumber}
+
+        UNION ALL
+
+        SELECT
+          ad.id,
+          ad.due_type_id,
+          'ALUMINI FORM' as type_name,
+          'Alumni form submission required' as type_description,
+          FALSE as requires_permission,
+          FALSE as is_payable,
+          ad.principal_amount,
+          ad.amount_paid,
+          ad.is_compounded,
+          ad.interest_rate,
+          ad.permission_granted,
+          ad.supporting_document_link,
+          ad.proof_drive_link,
+          ad.due_clear_by_date,
+          ad.is_cleared,
+          ad.overall_status,
+          ad.due_description,
+          NULL::TEXT as remarks,
+          ad.needs_original,
+          ad.needs_pdf,
+          ad.created_at,
+          ad.updated_at,
+          sec.name as added_by_entity,
+          TRUE as is_alumni_due,
+          ad.is_form_submitted,
+          ad.submitted_at,
+          ad.status_of_registration_with_alumni_portal,
+          ad.linkedin_profile_link,
+          ad.placement_status,
+          ad.proof_of_placement,
+          ad.planning_for_higher_education,
+          ad.proof_of_higher_education
+        FROM alumni_dues ad
+        LEFT JOIN sections sec ON ad.added_by_section_id = sec.id
+        WHERE ad.student_roll_number = ${rollNumber}
+      ) dues
+      WHERE dues.is_cleared = FALSE
         ${payableFilter}
-      ORDER BY sd.due_clear_by_date ASC, sd.created_at DESC
-      LIMIT ${limit} OFFSET ${offset}
+      ORDER BY dues.due_clear_by_date ASC, dues.created_at DESC
+      LIMIT ${parsedLimit} OFFSET ${parsedOffset}
     `;
 
     // Enrich dues with dynamic interest calculations
@@ -108,24 +212,57 @@ export const getDues = async (req, res) => {
     // Get total count
     const countResult = await sql`
       SELECT COUNT(*) as total
-      FROM student_dues sd
-      WHERE sd.student_roll_number = ${rollNumber} AND sd.is_cleared = FALSE
+      FROM (
+        SELECT dd.id, dd.is_payable, dd.is_cleared
+        FROM department_dues dd
+        WHERE dd.student_roll_number = ${rollNumber}
+
+        UNION ALL
+
+        SELECT ad.id, FALSE as is_payable, ad.is_cleared
+        FROM alumni_dues ad
+        WHERE ad.student_roll_number = ${rollNumber}
+      ) dues
+      WHERE dues.is_cleared = FALSE
         ${payableFilter}
     `;
 
     // Calculate aggregated totals using interest calculation
+    const totalsFilter = status === 'payable'
+      ? sql`AND due_totals.is_payable = TRUE`
+      : sql``;
+
     const allDuesForTotals = await sql`
-      SELECT 
-        sd.principal_amount,
-        sd.amount_paid,
-        sd.is_compounded,
-        sd.interest_rate,
-        sd.created_at,
-        sd.is_payable,
-        sd.permission_granted
-      FROM student_dues sd
-      WHERE sd.student_roll_number = ${rollNumber} AND sd.is_cleared = FALSE
-        ${payableFilter}
+      SELECT *
+      FROM (
+        SELECT 
+          dd.principal_amount,
+          dd.amount_paid,
+          dd.is_compounded,
+          dd.interest_rate,
+          dd.created_at,
+          dd.is_payable,
+          dd.permission_granted,
+          dd.is_cleared
+        FROM department_dues dd
+        WHERE dd.student_roll_number = ${rollNumber}
+
+        UNION ALL
+
+        SELECT
+          ad.principal_amount,
+          ad.amount_paid,
+          ad.is_compounded,
+          ad.interest_rate,
+          ad.created_at,
+          FALSE as is_payable,
+          ad.permission_granted,
+          ad.is_cleared
+        FROM alumni_dues ad
+        WHERE ad.student_roll_number = ${rollNumber}
+      ) due_totals
+      WHERE due_totals.is_cleared = FALSE
+        ${totalsFilter}
     `;
     
     const totalsCalc = calculateTotalOutstanding(allDuesForTotals);
@@ -136,8 +273,8 @@ export const getDues = async (req, res) => {
       dues: duesWithStatus,
       pagination: {
         total: parseInt(countResult[0].total),
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: parsedLimit,
+        offset: parsedOffset
       },
       totals: {
         total_dues: allDuesForTotals.length,
@@ -159,6 +296,8 @@ export const getDuesHistory = async (req, res) => {
   try {
     const studentId = req.user.user_id;
     const { limit = 50, offset = 0, start_date, end_date, due_type_id } = req.query;
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+    const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
     // Get student's roll number
     const studentResult = await sql`
@@ -176,70 +315,149 @@ export const getDuesHistory = async (req, res) => {
     let typeFilter = sql``;
 
     if (start_date) {
-      dateFilter = sql`AND sd.updated_at >= ${start_date}`;
+      dateFilter = sql`${dateFilter} AND due_history.updated_at >= ${start_date}`;
     }
     if (end_date) {
-      dateFilter = sql`${dateFilter} AND sd.updated_at <= ${end_date}`;
+      dateFilter = sql`${dateFilter} AND due_history.updated_at <= ${end_date}`;
     }
     if (due_type_id) {
-      typeFilter = sql`AND sd.due_type_id = ${due_type_id}`;
+      const parsedDueTypeId = parseInt(due_type_id, 10);
+      if (!Number.isNaN(parsedDueTypeId)) {
+        typeFilter = sql`AND due_history.due_type_id = ${parsedDueTypeId}`;
+      }
     }
 
     const result = await sql`
-      SELECT 
-        sd.id,
-        sd.due_type_id,
-        dt.type_name,
-        dt.description as type_description,
-        sd.is_payable,
-        sd.current_amount,
-        sd.principal_amount,
-        sd.amount_paid,
-        sd.is_compounded,
-        sd.interest_rate,
-        sd.permission_granted,
-        sd.supporting_document_link,
-        sd.due_clear_by_date,
-        sd.is_cleared,
-        sd.due_description,
-        sd.remarks,
-        sd.proof_drive_link,
-        sd.created_at,
-        sd.updated_at,
-        CASE 
-          WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-          ELSE s.name
-        END as added_by_entity,
-        u.username as cleared_by_username,
-        (
-          SELECT json_agg(json_build_object(
-            'id', dp.id,
-            'paid_amount', dp.paid_amount,
-            'payment_reference', dp.payment_reference,
-            'payment_method', dp.payment_method,
-            'payment_status', dp.payment_status,
-            'paid_at', dp.paid_at
-          ) ORDER BY dp.paid_at DESC)
-          FROM due_payments dp
-          WHERE dp.due_id = sd.id
-        ) as payments
-      FROM student_dues sd
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      LEFT JOIN departments d ON sd.added_by_department_id = d.id
-      LEFT JOIN sections s ON sd.added_by_section_id = s.id
-      LEFT JOIN users u ON sd.cleared_by_user_id = u.user_id
-      WHERE sd.student_roll_number = ${rollNumber} AND sd.overall_status = TRUE
+      SELECT
+        due_history.*,
+        CASE
+          WHEN due_history.due_source = 'department' THEN (
+            SELECT json_agg(json_build_object(
+              'id', dp.id,
+              'paid_amount', dp.paid_amount,
+              'payment_reference', dp.payment_reference,
+              'payment_method', dp.payment_method,
+              'payment_status', dp.payment_status,
+              'paid_at', dp.paid_at
+            ) ORDER BY dp.paid_at DESC)
+            FROM due_payments dp
+            WHERE dp.due_id = due_history.id
+          )
+          ELSE NULL
+        END as payments
+      FROM (
+        SELECT
+          dd.id,
+          dd.due_type_id,
+          dt.type_name,
+          dt.description as type_description,
+          dt.requires_permission,
+          dd.is_payable,
+          CASE
+            WHEN dd.is_payable = TRUE THEN calculate_compounded_amount(dd.principal_amount, dd.interest_rate, dd.is_compounded, dd.due_clear_by_date)
+            ELSE 0::NUMERIC
+          END as current_amount,
+          dd.principal_amount,
+          dd.amount_paid,
+          dd.is_compounded,
+          dd.interest_rate,
+          dd.permission_granted,
+          dd.supporting_document_link,
+          dd.due_clear_by_date,
+          dd.is_cleared,
+          dd.due_description,
+          dd.remarks,
+          dd.proof_drive_link,
+          dd.needs_original,
+          dd.needs_pdf,
+          dd.created_at,
+          dd.updated_at,
+          d.name as added_by_entity,
+          cleared_u.username as cleared_by_username,
+          FALSE as is_alumni_due,
+          FALSE as is_form_submitted,
+          NULL::TIMESTAMPTZ as submitted_at,
+          NULL::VARCHAR as status_of_registration_with_alumni_portal,
+          NULL::TEXT as linkedin_profile_link,
+          NULL::VARCHAR as placement_status,
+          NULL::TEXT as proof_of_placement,
+          NULL::VARCHAR as planning_for_higher_education,
+          NULL::TEXT as proof_of_higher_education,
+          'department'::TEXT as due_source
+        FROM department_dues dd
+        JOIN due_types dt ON dd.due_type_id = dt.id
+        LEFT JOIN departments d ON dd.added_by_department_id = d.id
+        LEFT JOIN users cleared_u ON dd.cleared_by_user_id = cleared_u.user_id
+        WHERE dd.student_roll_number = ${rollNumber}
+          AND dd.overall_status = TRUE
+
+        UNION ALL
+
+        SELECT
+          ad.id,
+          ad.due_type_id,
+          'ALUMINI FORM' as type_name,
+          'Alumni form submission required' as type_description,
+          FALSE as requires_permission,
+          FALSE as is_payable,
+          0::NUMERIC as current_amount,
+          ad.principal_amount,
+          ad.amount_paid,
+          ad.is_compounded,
+          ad.interest_rate,
+          ad.permission_granted,
+          ad.supporting_document_link,
+          ad.due_clear_by_date,
+          ad.is_cleared,
+          ad.due_description,
+          ad.remarks,
+          ad.proof_drive_link,
+          ad.needs_original,
+          ad.needs_pdf,
+          ad.created_at,
+          ad.updated_at,
+          sec.name as added_by_entity,
+          cleared_u.username as cleared_by_username,
+          TRUE as is_alumni_due,
+          ad.is_form_submitted,
+          ad.submitted_at,
+          ad.status_of_registration_with_alumni_portal,
+          ad.linkedin_profile_link,
+          ad.placement_status,
+          ad.proof_of_placement,
+          ad.planning_for_higher_education,
+          ad.proof_of_higher_education,
+          'alumni'::TEXT as due_source
+        FROM alumni_dues ad
+        LEFT JOIN sections sec ON ad.added_by_section_id = sec.id
+        LEFT JOIN users cleared_u ON ad.cleared_by_user_id = cleared_u.user_id
+        WHERE ad.student_roll_number = ${rollNumber}
+          AND ad.overall_status = TRUE
+      ) due_history
+      WHERE TRUE
         ${dateFilter}
         ${typeFilter}
-      ORDER BY sd.updated_at DESC
-      LIMIT ${limit} OFFSET ${offset}
+      ORDER BY due_history.updated_at DESC
+      LIMIT ${parsedLimit} OFFSET ${parsedOffset}
     `;
 
     // Get total count
     const countResult = await sql`
       SELECT COUNT(*) as total
-      FROM student_dues sd
-      WHERE sd.student_roll_number = ${rollNumber} AND sd.overall_status = TRUE
+      FROM (
+        SELECT dd.id, dd.due_type_id, dd.updated_at
+        FROM department_dues dd
+        WHERE dd.student_roll_number = ${rollNumber}
+          AND dd.overall_status = TRUE
+
+        UNION ALL
+
+        SELECT ad.id, ad.due_type_id, ad.updated_at
+        FROM alumni_dues ad
+        WHERE ad.student_roll_number = ${rollNumber}
+          AND ad.overall_status = TRUE
+      ) due_history
+      WHERE TRUE
         ${dateFilter}
         ${typeFilter}
     `;
@@ -248,8 +466,8 @@ export const getDuesHistory = async (req, res) => {
       history: result,
       pagination: {
         total: parseInt(countResult[0].total),
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: parsedLimit,
+        offset: parsedOffset
       }
     });
   } catch (error) {
@@ -265,6 +483,11 @@ export const getDueDetails = async (req, res) => {
   try {
     const studentId = req.user.user_id;
     const { dueId } = req.params;
+    const parsedDue = parseDueIdentifier(dueId);
+
+    if (!parsedDue) {
+      return res.status(400).json({ error: 'Invalid due ID' });
+    }
 
     // Get student's roll number
     const studentResult = await sql`
@@ -277,38 +500,66 @@ export const getDueDetails = async (req, res) => {
 
     const rollNumber = studentResult[0].roll_number;
 
-    const result = await sql`
-      SELECT 
-        sd.*,
-        dt.type_name,
-        dt.description as type_description,
-        CASE 
-          WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-          ELSE s.name
-        END as added_by_entity,
-        u.username as added_by_username,
-        cleared_u.username as cleared_by_username,
-        (
-          SELECT json_agg(json_build_object(
-            'id', dp.id,
-            'paid_amount', dp.paid_amount,
-            'payment_reference', dp.payment_reference,
-            'payment_method', dp.payment_method,
-            'payment_status', dp.payment_status,
-            'gateway_response', dp.gateway_response,
-            'paid_at', dp.paid_at
-          ) ORDER BY dp.paid_at DESC)
-          FROM due_payments dp
-          WHERE dp.due_id = sd.id
-        ) as payments
-      FROM student_dues sd
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      LEFT JOIN departments d ON sd.added_by_department_id = d.id
-      LEFT JOIN sections s ON sd.added_by_section_id = s.id
-      LEFT JOIN users u ON sd.added_by_user_id = u.user_id
-      LEFT JOIN users cleared_u ON sd.cleared_by_user_id = cleared_u.user_id
-      WHERE sd.id = ${dueId} AND sd.student_roll_number = ${rollNumber}
-    `;
+    let result = [];
+
+    if (parsedDue.source !== 'alumni') {
+      result = await sql`
+        SELECT
+          dd.*,
+          dt.type_name,
+          dt.description as type_description,
+          dt.requires_permission,
+          d.name as added_by_entity,
+          added_u.username as added_by_username,
+          cleared_u.username as cleared_by_username,
+          FALSE as is_alumni_due,
+          'department'::TEXT as due_source,
+          (
+            SELECT json_agg(json_build_object(
+              'id', dp.id,
+              'paid_amount', dp.paid_amount,
+              'payment_reference', dp.payment_reference,
+              'payment_method', dp.payment_method,
+              'payment_status', dp.payment_status,
+              'gateway_response', dp.gateway_response,
+              'paid_at', dp.paid_at
+            ) ORDER BY dp.paid_at DESC)
+            FROM due_payments dp
+            WHERE dp.due_id = dd.id
+          ) as payments
+        FROM department_dues dd
+        JOIN due_types dt ON dd.due_type_id = dt.id
+        LEFT JOIN departments d ON dd.added_by_department_id = d.id
+        LEFT JOIN users added_u ON dd.added_by_user_id = added_u.user_id
+        LEFT JOIN users cleared_u ON dd.cleared_by_user_id = cleared_u.user_id
+        WHERE dd.id = ${parsedDue.id}
+          AND dd.student_roll_number = ${rollNumber}
+        LIMIT 1
+      `;
+    }
+
+    if (result.length === 0 && parsedDue.source !== 'department') {
+      result = await sql`
+        SELECT
+          ad.*,
+          'ALUMINI FORM' as type_name,
+          'Alumni form submission required' as type_description,
+          FALSE as requires_permission,
+          sec.name as added_by_entity,
+          added_u.username as added_by_username,
+          cleared_u.username as cleared_by_username,
+          TRUE as is_alumni_due,
+          'alumni'::TEXT as due_source,
+          NULL::JSON as payments
+        FROM alumni_dues ad
+        LEFT JOIN sections sec ON ad.added_by_section_id = sec.id
+        LEFT JOIN users added_u ON ad.added_by_user_id = added_u.user_id
+        LEFT JOIN users cleared_u ON ad.cleared_by_user_id = cleared_u.user_id
+        WHERE ad.id = ${parsedDue.id}
+          AND ad.student_roll_number = ${rollNumber}
+        LIMIT 1
+      `;
+    }
 
     if (result.length === 0) {
       return res.status(404).json({ error: 'Due not found or access denied' });
@@ -333,6 +584,22 @@ export const createPaymentSession = async (req, res) => {
       return res.status(400).json({ error: 'Invalid due_ids' });
     }
 
+    const normalizedDueIds = [];
+    for (const dueIdentifier of due_ids) {
+      const parsedDue = parseDueIdentifier(dueIdentifier);
+      if (!parsedDue) {
+        return res.status(400).json({ error: 'Invalid due_ids' });
+      }
+
+      if (parsedDue.source === 'alumni') {
+        return res.status(400).json({ error: 'Alumni dues are not payable' });
+      }
+
+      normalizedDueIds.push(parsedDue.id);
+    }
+
+    const uniqueDueIds = Array.from(new Set(normalizedDueIds));
+
     // Get student's roll number
     const studentResult = await sql`
       SELECT roll_number, name, email FROM students WHERE student_id = ${studentId}
@@ -347,28 +614,29 @@ export const createPaymentSession = async (req, res) => {
     // Validate dues ownership and payability
     const validationResult = await sql`
       SELECT 
-        sd.id,
-        sd.principal_amount,
-        sd.amount_paid,
-        sd.is_compounded,
-        sd.interest_rate,
-        sd.created_at,
-        sd.is_payable,
-        sd.permission_granted,
-        sd.is_cleared,
-        sd.due_type_id,
+        dd.id,
+        dd.principal_amount,
+        dd.amount_paid,
+        dd.is_compounded,
+        dd.interest_rate,
+        dd.created_at,
+        dd.is_payable,
+        dd.permission_granted,
+        dd.is_cleared,
+        dd.overall_status,
+        dd.due_type_id,
         dt.type_name
-      FROM student_dues sd
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      WHERE sd.id = ANY(${due_ids}) 
-        AND sd.student_roll_number = ${student.roll_number}
+      FROM department_dues dd
+      JOIN due_types dt ON dd.due_type_id = dt.id
+      WHERE dd.id = ANY(${uniqueDueIds})
+        AND dd.student_roll_number = ${student.roll_number}
     `;
 
-    if (validationResult.length !== due_ids.length) {
+    if (validationResult.length !== uniqueDueIds.length) {
       return res.status(400).json({ 
         error: 'Some dues not found or access denied',
         found: validationResult.length,
-        requested: due_ids.length
+        requested: uniqueDueIds.length
       });
     }
 
@@ -407,7 +675,7 @@ export const createPaymentSession = async (req, res) => {
       student_id: studentId,
       student_name: student.name,
       student_email: student.email,
-      due_ids: due_ids,
+      due_ids: uniqueDueIds,
       total_amount: totalAmount,
       return_url: return_url || '/student/dues',
       created_at: new Date()
@@ -463,9 +731,9 @@ export const getPaymentStatus = async (req, res) => {
     const result = await sql`
       SELECT 
         dp.*,
-        sd.student_roll_number
+        dd.student_roll_number
       FROM due_payments dp
-      JOIN student_dues sd ON dp.due_id = sd.id
+      JOIN department_dues dd ON dp.due_id = dd.id
       WHERE dp.payment_reference = ${paymentId}
       LIMIT 1
     `;
@@ -497,30 +765,63 @@ export const getDueFormPDF = async (req, res) => {
   try {
     const studentId = req.user.user_id;
     const { dueId } = req.params;
+    const parsedDue = parseDueIdentifier(dueId);
+
+    if (!parsedDue) {
+      return res.status(400).json({ error: 'Invalid due ID' });
+    }
+
+    const printableDueId = parsedDue.id;
+
+    let result = [];
 
     // Get student and due details
-    const result = await sql`
-      SELECT 
-        s.name as student_name,
-        s.roll_number,
-        s.branch,
-        s.section,
-        s.email,
-        s.mobile,
-        sd.*,
-        dt.type_name,
-        dt.description as type_description,
-        CASE 
-          WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-          ELSE sec.name
-        END as added_by_entity
-      FROM students s
-      JOIN student_dues sd ON s.roll_number = sd.student_roll_number
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      LEFT JOIN departments d ON sd.added_by_department_id = d.id
-      LEFT JOIN sections sec ON sd.added_by_section_id = sec.id
-      WHERE s.student_id = ${studentId} AND sd.id = ${dueId}
-    `;
+    if (parsedDue.source !== 'alumni') {
+      result = await sql`
+        SELECT
+          s.name as student_name,
+          s.roll_number,
+          s.branch,
+          s.section,
+          s.email,
+          s.mobile,
+          dd.*, 
+          dt.type_name,
+          dt.description as type_description,
+          d.name as added_by_entity,
+          'department'::TEXT as due_source
+        FROM students s
+        JOIN department_dues dd ON s.roll_number = dd.student_roll_number
+        JOIN due_types dt ON dd.due_type_id = dt.id
+        LEFT JOIN departments d ON dd.added_by_department_id = d.id
+        WHERE s.student_id = ${studentId}
+          AND dd.id = ${parsedDue.id}
+        LIMIT 1
+      `;
+    }
+
+    if (result.length === 0 && parsedDue.source !== 'department') {
+      result = await sql`
+        SELECT
+          s.name as student_name,
+          s.roll_number,
+          s.branch,
+          s.section,
+          s.email,
+          s.mobile,
+          ad.*,
+          'ALUMINI FORM' as type_name,
+          'Alumni form submission required' as type_description,
+          sec.name as added_by_entity,
+          'alumni'::TEXT as due_source
+        FROM students s
+        JOIN alumni_dues ad ON s.roll_number = ad.student_roll_number
+        LEFT JOIN sections sec ON ad.added_by_section_id = sec.id
+        WHERE s.student_id = ${studentId}
+          AND ad.id = ${parsedDue.id}
+        LIMIT 1
+      `;
+    }
 
     if (result.length === 0) {
       return res.status(404).json({ error: 'Due not found or access denied' });
@@ -540,7 +841,7 @@ export const getDueFormPDF = async (req, res) => {
     });
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=No_dues_${data.roll_number}_${dueId}.pdf`);
+    res.setHeader('Content-Disposition', `attachment; filename=No_dues_${data.roll_number}_${printableDueId}.pdf`);
     
     doc.pipe(res);
 
@@ -568,7 +869,7 @@ export const getDueFormPDF = async (req, res) => {
       year: 'numeric' 
     });
     doc.fontSize(10).font('Helvetica');
-    doc.text(`Certificate No: VNRVJIET/ND/${new Date().getFullYear()}/${dueId}`, { align: 'left' });
+    doc.text(`Certificate No: VNRVJIET/ND/${new Date().getFullYear()}/${printableDueId}`, { align: 'left' });
     doc.text(`Date: ${certDate}`, { align: 'right' });
     doc.moveDown(1.5);
 
@@ -678,7 +979,7 @@ export const getDueFormPDF = async (req, res) => {
     );
     
     doc.fontSize(7).text(
-      `Generated on: ${new Date().toLocaleString('en-IN')} | Document ID: ND-${dueId}-${Date.now()}`,
+      `Generated on: ${new Date().toLocaleString('en-IN')} | Document ID: ND-${printableDueId}-${Date.now()}`,
       60,
       765,
       { align: 'center', width: 475 }
@@ -698,6 +999,17 @@ export const getReceiptPDF = async (req, res) => {
   try {
     const studentId = req.user.user_id;
     const { dueId } = req.params;
+    const parsedDue = parseDueIdentifier(dueId);
+
+    if (!parsedDue) {
+      return res.status(400).json({ error: 'Invalid due ID' });
+    }
+
+    if (parsedDue.source === 'alumni') {
+      return res.status(400).json({ error: 'Receipt is available only for payable department dues' });
+    }
+
+    const printableDueId = parsedDue.id;
 
     // Get payment and due details
     const result = await sql`
@@ -707,12 +1019,9 @@ export const getReceiptPDF = async (req, res) => {
         s.branch,
         s.section,
         s.email,
-        sd.*,
+        dd.*,
         dt.type_name,
-        CASE 
-          WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-          ELSE sec.name
-        END as added_by_entity,
+        d.name as added_by_entity,
         (
           SELECT json_agg(json_build_object(
             'paid_amount', dp.paid_amount,
@@ -722,14 +1031,15 @@ export const getReceiptPDF = async (req, res) => {
             'paid_at', dp.paid_at
           ) ORDER BY dp.paid_at DESC)
           FROM due_payments dp
-          WHERE dp.due_id = sd.id AND dp.payment_status = 'SUCCESS'
+          WHERE dp.due_id = dd.id AND dp.payment_status = 'SUCCESS'
         ) as payments
       FROM students s
-      JOIN student_dues sd ON s.roll_number = sd.student_roll_number
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      LEFT JOIN departments d ON sd.added_by_department_id = d.id
-      LEFT JOIN sections sec ON sd.added_by_section_id = sec.id
-      WHERE s.student_id = ${studentId} AND sd.id = ${dueId}
+      JOIN department_dues dd ON s.roll_number = dd.student_roll_number
+      JOIN due_types dt ON dd.due_type_id = dt.id
+      LEFT JOIN departments d ON dd.added_by_department_id = d.id
+      WHERE s.student_id = ${studentId}
+        AND dd.id = ${parsedDue.id}
+      LIMIT 1
     `;
 
     if (result.length === 0) {
@@ -754,7 +1064,7 @@ export const getReceiptPDF = async (req, res) => {
     });
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=Receipt_${data.roll_number}_${dueId}.pdf`);
+    res.setHeader('Content-Disposition', `attachment; filename=Receipt_${data.roll_number}_${printableDueId}.pdf`);
     
     doc.pipe(res);
 
@@ -782,7 +1092,7 @@ export const getReceiptPDF = async (req, res) => {
       year: 'numeric' 
     });
     doc.fontSize(10).font('Helvetica');
-    doc.text(`Receipt No: VNRVJIET/REC/${new Date().getFullYear()}/${dueId}/${Date.now().toString().slice(-6)}`, { align: 'left' });
+    doc.text(`Receipt No: VNRVJIET/REC/${new Date().getFullYear()}/${printableDueId}/${Date.now().toString().slice(-6)}`, { align: 'left' });
     doc.text(`Date: ${receiptDate}`, { align: 'right' });
     doc.moveDown(1.5);
 
@@ -906,7 +1216,7 @@ export const getReceiptPDF = async (req, res) => {
     );
     
     doc.fontSize(7).text(
-      `Generated on: ${new Date().toLocaleString('en-IN')} | Receipt ID: REC-${dueId}-${Date.now()}`,
+      `Generated on: ${new Date().toLocaleString('en-IN')} | Receipt ID: REC-${printableDueId}-${Date.now()}`,
       60,
       765,
       { align: 'center', width: 475 }
@@ -955,6 +1265,145 @@ export const getNoDuesFormPdf = async (req, res) => {
   } catch (error) {
     console.error('Error generating no dues form PDF:', error);
     res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+};
+
+/**
+ * Submit alumni form details for a student-assigned alumni due
+ */
+export const submitAlumniDueForm = async (req, res) => {
+  try {
+    const studentId = req.user.user_id;
+    const { dueId } = req.params;
+    const parsedDue = parseDueIdentifier(dueId);
+
+    if (!parsedDue) {
+      return res.status(400).json({ error: 'Invalid due ID' });
+    }
+
+    if (parsedDue.source === 'department') {
+      return res.status(400).json({ error: 'Alumni form submission is only allowed for alumni dues' });
+    }
+
+    const {
+      registration_with_alumni_portal,
+      linkedin_profile_link,
+      placement_status,
+      proof_of_placement,
+      planning_higher_education,
+      proof_of_higher_education,
+    } = req.body;
+
+    const studentResult = await sql`
+      SELECT roll_number
+      FROM students
+      WHERE student_id = ${studentId}
+    `;
+
+    if (studentResult.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const rollNumber = studentResult[0].roll_number;
+
+    const dueResult = await sql`
+      SELECT id, is_form_submitted, is_cleared
+      FROM alumni_dues
+      WHERE id = ${parsedDue.id}
+        AND student_roll_number = ${rollNumber}
+      LIMIT 1
+    `;
+
+    if (dueResult.length === 0) {
+      return res.status(404).json({ error: 'Alumni due not found or access denied' });
+    }
+
+    if (dueResult[0].is_form_submitted || dueResult[0].is_cleared) {
+      return res.status(400).json({ error: 'Alumni form is already submitted for this due' });
+    }
+
+    const registrationStatus = normalizeYesNoField(registration_with_alumni_portal);
+    const placementStatus = normalizeYesNoField(placement_status);
+    const higherEducationStatus = normalizeYesNoField(planning_higher_education);
+
+    if (!registrationStatus) {
+      return res.status(400).json({
+        error: 'Status of Registration with Alumni Portal must be Y or N',
+      });
+    }
+
+    if (!placementStatus) {
+      return res.status(400).json({ error: 'Placement Status must be Y or N' });
+    }
+
+    if (!higherEducationStatus) {
+      return res.status(400).json({
+        error: 'Planning for Higher Education must be Y or N',
+      });
+    }
+
+    const linkedinLink = String(linkedin_profile_link || '').trim();
+    const proofOfPlacement = String(proof_of_placement || '').trim();
+    const proofOfHigherEducation = String(proof_of_higher_education || '').trim();
+
+    if (!linkedinLink) {
+      return res.status(400).json({ error: 'LinkedIn Profile Link is required' });
+    }
+
+    if (!isValidHttpUrl(linkedinLink)) {
+      return res.status(400).json({ error: 'LinkedIn Profile Link must be a valid URL' });
+    }
+
+    if (placementStatus === 'Y' && !proofOfPlacement) {
+      return res.status(400).json({
+        error: 'Proof of Placement is required when Placement Status is Y',
+      });
+    }
+
+    if (proofOfPlacement && !isValidHttpUrl(proofOfPlacement)) {
+      return res.status(400).json({ error: 'Proof of Placement must be a valid URL' });
+    }
+
+    if (higherEducationStatus === 'Y' && !proofOfHigherEducation) {
+      return res.status(400).json({
+        error: 'Proof of Higher Education is required when Planning for Higher Education is Y',
+      });
+    }
+
+    if (proofOfHigherEducation && !isValidHttpUrl(proofOfHigherEducation)) {
+      return res.status(400).json({
+        error: 'Proof of Higher Education must be a valid URL',
+      });
+    }
+
+    const updated = await sql`
+      UPDATE alumni_dues
+      SET
+        status_of_registration_with_alumni_portal = ${registrationStatus},
+        linkedin_profile_link = ${linkedinLink},
+        placement_status = ${placementStatus},
+        proof_of_placement = ${proofOfPlacement || null},
+        planning_for_higher_education = ${higherEducationStatus},
+        proof_of_higher_education = ${proofOfHigherEducation || null},
+        is_form_submitted = TRUE,
+        submitted_at = CURRENT_TIMESTAMP,
+        permission_granted = TRUE,
+        overall_status = TRUE,
+        is_cleared = TRUE,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${parsedDue.id}
+        AND student_roll_number = ${rollNumber}
+      RETURNING *
+    `;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Alumni form submitted successfully',
+      data: updated[0],
+    });
+  } catch (error) {
+    console.error('Error submitting alumni due form:', error);
+    return res.status(500).json({ error: 'Failed to submit alumni due form' });
   }
 };
 
@@ -1046,6 +1495,45 @@ function convertThreeDigits(num) {
   return words.trim();
 }
 
+const normalizeDocumentTypeLabel = (value = '') =>
+  value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+
+const COPY_DOCUMENT_TYPE_ALIASES = {
+  internship: ['internship', 'intership', 'internship letter'],
+  offer: ['offer', 'offer letter']
+};
+
+const classifyCopyDocumentUploadType = (documentTypeLabel = '') => {
+  const normalizedLabel = normalizeDocumentTypeLabel(documentTypeLabel);
+
+  if (!normalizedLabel) {
+    return 'other-document';
+  }
+
+  const hasInternshipAlias = COPY_DOCUMENT_TYPE_ALIASES.internship.some(
+    (alias) => normalizedLabel === alias || normalizedLabel.includes(alias)
+  );
+
+  if (hasInternshipAlias) {
+    return 'internship-document';
+  }
+
+  const hasOfferAlias = COPY_DOCUMENT_TYPE_ALIASES.offer.some(
+    (alias) => normalizedLabel === alias || normalizedLabel.includes(alias)
+  );
+
+  if (hasOfferAlias) {
+    return 'offer-document';
+  }
+
+  return 'other-document';
+};
+
 /**
  * Upload document for non-payable dues
  */
@@ -1057,6 +1545,11 @@ export const uploadDocument = async (req, res) => {
   try {
     const studentId = req.user.user_id;
     const { dueId } = req.params;
+    const parsedDue = parseDueIdentifier(dueId);
+
+    if (!parsedDue) {
+      return res.status(400).json({ error: 'Invalid due ID' });
+    }
 
     // Check if file was uploaded
     if (!req.file) {
@@ -1083,17 +1576,46 @@ export const uploadDocument = async (req, res) => {
     const rollNumber = studentResult[0].roll_number;
 
     // Verify due ownership and that it requires documentation
-    const dueResult = await sql`
-      SELECT 
-        id, 
-        is_payable, 
-        needs_original, 
-        needs_pdf, 
-        is_cleared,
-        proof_drive_link
-      FROM student_dues
-      WHERE id = ${dueId} AND student_roll_number = ${rollNumber}
-    `;
+    let dueResult = [];
+
+    if (parsedDue.source !== 'alumni') {
+      dueResult = await sql`
+        SELECT
+          dd.id,
+          dd.is_payable,
+          dd.needs_original,
+          dd.needs_pdf,
+          dd.is_cleared,
+          dd.proof_drive_link,
+          dd.due_description,
+          dt.type_name AS due_type_name,
+          'department'::TEXT as due_source
+        FROM department_dues dd
+        JOIN due_types dt ON dd.due_type_id = dt.id
+        WHERE dd.id = ${parsedDue.id}
+          AND dd.student_roll_number = ${rollNumber}
+        LIMIT 1
+      `;
+    }
+
+    if (dueResult.length === 0 && parsedDue.source !== 'department') {
+      dueResult = await sql`
+        SELECT
+          ad.id,
+          ad.is_payable,
+          ad.needs_original,
+          ad.needs_pdf,
+          ad.is_cleared,
+          ad.proof_drive_link,
+          ad.due_description,
+          'ALUMINI FORM' as due_type_name,
+          'alumni'::TEXT as due_source
+        FROM alumni_dues ad
+        WHERE ad.id = ${parsedDue.id}
+          AND ad.student_roll_number = ${rollNumber}
+        LIMIT 1
+      `;
+    }
 
     if (dueResult.length === 0) {
       return res.status(404).json({ error: 'Due not found or access denied' });
@@ -1120,34 +1642,62 @@ export const uploadDocument = async (req, res) => {
       });
     }
 
+    const requestedDocumentType =
+      req.body?.documentType ||
+      req.body?.document_type ||
+      req.body?.documentTypeName ||
+      '';
+
+    // For copy uploads (PDF), route by document type with internship/offer/other fallback.
+    const resolvedDocumentType =
+      requestedDocumentType || due.due_description || due.due_type_name || '';
+    const driveUploadType = due.needs_pdf
+      ? classifyCopyDocumentUploadType(resolvedDocumentType)
+      : 'document';
+
     // Upload file to Google Drive
     // Filename will be: {due_id}_{student_roll_number}.{extension}
     const uploadResult = await uploadToGoogleDrive(
       req.file,
-      dueId,
+      parsedDue.id,
       rollNumber,
-      'document' // upload type: document submissions folder
+      driveUploadType
     );
 
     // Update the due with Google Drive link - clears remarks field (previous rejection reason)
-    const updateResult = await sql`
-      UPDATE student_dues
-      SET 
-        proof_drive_link = ${uploadResult.webViewLink},
-        remarks = NULL,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${dueId} AND student_roll_number = ${rollNumber}
-      RETURNING *
-    `;
+    const updateResult = due.due_source === 'department'
+      ? await sql`
+          UPDATE department_dues
+          SET 
+            proof_drive_link = ${uploadResult.webViewLink},
+            remarks = NULL,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${parsedDue.id}
+            AND student_roll_number = ${rollNumber}
+          RETURNING *
+        `
+      : await sql`
+          UPDATE alumni_dues
+          SET 
+            proof_drive_link = ${uploadResult.webViewLink},
+            remarks = NULL,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${parsedDue.id}
+            AND student_roll_number = ${rollNumber}
+          RETURNING *
+        `;
 
     res.json({
       success: true,
       message: 'Document uploaded successfully to Google Drive. Awaiting operator approval.',
       due: updateResult[0],
+      due_source: due.due_source,
       upload: {
         fileName: uploadResult.fileName,
         fileId: uploadResult.fileId,
-        fileLink: uploadResult.webViewLink
+        fileLink: uploadResult.webViewLink,
+        uploadType: uploadResult.uploadType,
+        documentTypeUsed: resolvedDocumentType || null
       }
     });
   } catch (error) {
@@ -1179,53 +1729,89 @@ export const getPendingUploads = async (req, res) => {
 
     // Get all non-payable dues that need documentation and are not cleared
     const result = await sql`
-      SELECT 
-        sd.id,
-        sd.due_type_id,
-        dt.type_name,
-        dt.description as type_description,
-        sd.is_payable,
-        sd.needs_original,
-        sd.needs_pdf,
-        sd.due_clear_by_date,
-        sd.is_cleared,
-        sd.overall_status,
-        sd.due_description,
-        sd.proof_drive_link,
-        sd.remarks,
-        sd.created_at,
-        sd.updated_at,
-        CASE 
-          WHEN sd.added_by_department_id IS NOT NULL THEN d.name
-          ELSE s.name
-        END as issuing_department
-      FROM student_dues sd
-      JOIN due_types dt ON sd.due_type_id = dt.id
-      LEFT JOIN departments d ON sd.added_by_department_id = d.id
-      LEFT JOIN sections s ON sd.added_by_section_id = s.id
-      WHERE sd.student_roll_number = ${rollNumber}
-        AND sd.is_payable = FALSE
-        AND (sd.needs_original = TRUE OR sd.needs_pdf = TRUE)
-        AND sd.is_cleared = FALSE
-      ORDER BY 
-        CASE 
-          WHEN sd.proof_drive_link IS NULL THEN 0
-          WHEN sd.overall_status = 'Pending Approval' THEN 1
-          ELSE 2
-        END,
-        sd.due_clear_by_date ASC
+      SELECT *
+      FROM (
+        SELECT
+          dd.id,
+          dd.due_type_id,
+          dt.type_name,
+          dt.description as type_description,
+          dd.is_payable,
+          dd.needs_original,
+          dd.needs_pdf,
+          dd.due_clear_by_date,
+          dd.is_cleared,
+          dd.overall_status,
+          dd.due_description,
+          dd.proof_drive_link,
+          dd.remarks,
+          dd.created_at,
+          dd.updated_at,
+          d.name as issuing_department,
+          'department'::TEXT as due_source
+        FROM department_dues dd
+        JOIN due_types dt ON dd.due_type_id = dt.id
+        LEFT JOIN departments d ON dd.added_by_department_id = d.id
+        WHERE dd.student_roll_number = ${rollNumber}
+          AND dd.is_payable = FALSE
+          AND (dd.needs_original = TRUE OR dd.needs_pdf = TRUE)
+          AND dd.is_cleared = FALSE
+
+        UNION ALL
+
+        SELECT
+          ad.id,
+          ad.due_type_id,
+          'ALUMINI FORM' as type_name,
+          'Alumni form submission required' as type_description,
+          FALSE as is_payable,
+          ad.needs_original,
+          ad.needs_pdf,
+          ad.due_clear_by_date,
+          ad.is_cleared,
+          ad.overall_status,
+          ad.due_description,
+          ad.proof_drive_link,
+          ad.remarks,
+          ad.created_at,
+          ad.updated_at,
+          sec.name as issuing_department,
+          'alumni'::TEXT as due_source
+        FROM alumni_dues ad
+        LEFT JOIN sections sec ON ad.added_by_section_id = sec.id
+        WHERE ad.student_roll_number = ${rollNumber}
+          AND ad.is_payable = FALSE
+          AND (ad.needs_original = TRUE OR ad.needs_pdf = TRUE)
+          AND ad.is_cleared = FALSE
+      ) pending_due_uploads
+      ORDER BY pending_due_uploads.due_clear_by_date ASC, pending_due_uploads.updated_at DESC
     `;
 
-    // Categorize dues
-    const pending_upload = result.filter(d => !d.proof_drive_link);
-    const pending_approval = result.filter(d => d.proof_drive_link && d.overall_status === 'Pending Approval');
-    const rejected = result.filter(d => d.proof_drive_link && d.overall_status === 'Rejected');
+    // Categorize dues using proof link / remarks state.
+    const uploads = result.map((due) => {
+      const status = due.proof_drive_link
+        ? 'pending_approval'
+        : due.remarks
+          ? 'rejected'
+          : 'pending_upload';
+
+      return {
+        ...due,
+        status,
+        rejection_reason: due.remarks || null,
+      };
+    });
+
+    const pending_upload = uploads.filter((due) => due.status === 'pending_upload');
+    const pending_approval = uploads.filter((due) => due.status === 'pending_approval');
+    const rejected = uploads.filter((due) => due.status === 'rejected');
 
     res.json({
+      uploads,
       pending_upload,
       pending_approval,
       rejected,
-      total: result.length
+      total: uploads.length
     });
   } catch (error) {
     console.error('Error fetching pending uploads:', error);

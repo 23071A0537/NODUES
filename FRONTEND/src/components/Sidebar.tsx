@@ -57,6 +57,9 @@ const Sidebar = ({ role, onLogout, sectionName, onNavigate }: SidebarProps) => {
     userDataParsed = {};
   }
   const isFaculty = userDataParsed.is_faculty === true;
+  const hasDepartmentStudentScope =
+    Boolean(userDataParsed.department_id) &&
+    userDataParsed.access_level !== "all_faculty";
 
   const operatorLinks = [
     { to: "/operator/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -64,6 +67,15 @@ const Sidebar = ({ role, onLogout, sectionName, onNavigate }: SidebarProps) => {
     { to: "/operator/add-due", icon: FileText, label: "Add Due" },
     { to: "/operator/active-dues", icon: AlertCircle, label: "Active Dues" },
     { to: "/operator/cleared-dues", icon: CheckCircle, label: "Cleared Dues" },
+    ...(hasDepartmentStudentScope
+      ? [
+          {
+            to: "/operator/students-with-dues",
+            icon: Users,
+            label: "Students With Dues",
+          },
+        ]
+      : []),
     ...(sectionName?.toUpperCase() === "ACADEMIC"
       ? [{ to: "/operator/check-due", icon: Search, label: "Check Due" }]
       : []),

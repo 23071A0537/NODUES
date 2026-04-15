@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Search, XCircle } from "lucide-react";
+import { AlertCircle, Search } from "lucide-react";
 import { useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import DashboardLayout from "../../components/DashboardLayout";
@@ -273,15 +273,15 @@ const CheckDue = () => {
                     </div>
                     <div>
                       {studentData.summary.hasActiveDues ? (
-                        <div className="badge badge-error badge-lg gap-2 p-4 whitespace-nowrap">
-                          <XCircle size={20} />
-                          <span className="text-base font-bold">HAS DUE</span>
+                        <div className="badge badge-error badge-lg p-4 whitespace-nowrap">
+                          <span className="text-base font-bold">
+                            Has Due: Yes
+                          </span>
                         </div>
                       ) : (
-                        <div className="badge badge-success badge-lg gap-2 p-4 whitespace-nowrap">
-                          <CheckCircle size={20} />
+                        <div className="badge badge-success badge-lg p-4 whitespace-nowrap">
                           <span className="text-base font-bold">
-                            NO ACTIVE DUE
+                            Has Due: No
                           </span>
                         </div>
                       )}
@@ -307,7 +307,7 @@ const CheckDue = () => {
                     <div>
                       <h2 className="card-title text-2xl mb-1">No Dues Form</h2>
                       <p className="text-base-content/70">
-                        Tick means no due, cross means due exists
+                        Dues column shows Yes if due exists, No if no due
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -330,7 +330,6 @@ const CheckDue = () => {
                     <table className="table table-bordered w-full">
                       <thead className="bg-base-200">
                         <tr>
-                          <th className="w-16">S. No.</th>
                           <th>Name of the Department/Section</th>
                           <th className="w-28">Dues</th>
                           <th className="w-40">Signature with date</th>
@@ -340,22 +339,15 @@ const CheckDue = () => {
                         {studentData.noDuesForm.templateRows.map(
                           (row, index) => (
                             <tr key={`${row.label}-${index}`}>
-                              <td></td>
                               <td>{row.label}</td>
                               <td>
                                 {row.hasDue ? (
-                                  <span
-                                    title="Has Due"
-                                    className="text-error inline-flex"
-                                  >
-                                    <XCircle size={18} />
+                                  <span className="badge badge-error badge-sm whitespace-nowrap">
+                                    Yes
                                   </span>
                                 ) : (
-                                  <span
-                                    title="No Due"
-                                    className="text-success inline-flex"
-                                  >
-                                    <CheckCircle size={18} />
+                                  <span className="badge badge-success badge-sm whitespace-nowrap">
+                                    No
                                   </span>
                                 )}
                               </td>
@@ -383,7 +375,6 @@ const CheckDue = () => {
                       <table className="table table-bordered w-full">
                         <thead className="bg-base-200">
                           <tr>
-                            <th className="w-16">S. No.</th>
                             <th>Name of the Department/Section</th>
                             <th className="w-28">Dues</th>
                             <th className="w-40">Signature with date</th>
@@ -393,14 +384,10 @@ const CheckDue = () => {
                           {studentData.noDuesForm.extraRows.map(
                             (row, index) => (
                               <tr key={`${row.label}-${index}`}>
-                                <td></td>
                                 <td>{row.label}</td>
                                 <td>
-                                  <span
-                                    title="Has Due"
-                                    className="text-error inline-flex"
-                                  >
-                                    <XCircle size={18} />
+                                  <span className="badge badge-error badge-sm whitespace-nowrap">
+                                    Yes
                                   </span>
                                 </td>
                                 <td></td>

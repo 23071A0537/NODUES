@@ -39,4 +39,7 @@ router.post('/dues/:dueId/upload-document', uploadSingleFile, studentController.
 // Get pending uploads (dues that need documentation)
 router.get('/pending-uploads', studentController.getPendingUploads);
 
+// Submit alumni due form details
+router.post('/dues/:dueId/alumni-form', studentController.submitAlumniDueForm);
+
 export default router;

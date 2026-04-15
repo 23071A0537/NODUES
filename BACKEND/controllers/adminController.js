@@ -290,7 +290,7 @@ export const getDepartmentDues = async (req, res) => {
                     calculate_outstanding_amount(sd.principal_amount, sd.interest_rate, sd.is_compounded, sd.due_clear_by_date::timestamptz, sd.amount_paid)
                 ELSE 0 END), 0) as total_amount
             FROM departments d
-            LEFT JOIN student_dues sd ON sd.added_by_department_id = d.id
+            LEFT JOIN department_dues sd ON sd.added_by_department_id = d.id
             GROUP BY d.id, d.name
         `;
 
@@ -337,7 +337,7 @@ export const getDepartmentAnalytics = async (req, res) => {
                 COUNT(CASE WHEN sd.is_payable = false AND sd.is_cleared = true THEN 1 END) as cleared_non_payable,
                 COUNT(CASE WHEN sd.is_payable = true AND sd.is_cleared = true THEN 1 END) as cleared_payable
             FROM departments d
-            LEFT JOIN student_dues sd ON sd.added_by_department_id = d.id
+            LEFT JOIN department_dues sd ON sd.added_by_department_id = d.id
             GROUP BY d.id, d.name
             ORDER BY d.name
         `;

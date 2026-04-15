@@ -29,6 +29,7 @@ import FacultyDues from "./pages/operator/FacultyDues";
 import PendingApprovals from "./pages/operator/PendingApprovals";
 import OperatorReports from "./pages/operator/Reports";
 import SmsDashboard from "./pages/operator/SmsDashboard";
+import OperatorStudentsWithDues from "./pages/operator/StudentsWithDues";
 
 // Student Pages
 import StudentClearedDues from "./pages/student/ClearedDues";
@@ -195,6 +196,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={["operator"]}>
               <CheckDue />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/operator/students-with-dues"
+          element={
+            <ProtectedRoute allowedRoles={["operator"]}>
+              <OperatorStudentsWithDues />
             </ProtectedRoute>
           }
         />

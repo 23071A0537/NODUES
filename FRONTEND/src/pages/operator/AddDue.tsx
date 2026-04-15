@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import * as XLSX from "xlsx";
 import DashboardLayout from "../../components/DashboardLayout";
+import DepartmentDueForm from "../../components/operator/DepartmentDueForm";
 
 interface DueType {
   id: number;
@@ -52,6 +53,51 @@ interface PersonLookup {
   department_name?: string;
 }
 
+interface AlumniReopenSummary {
+  requested_count: number;
+  reopened_count: number;
+  reopened_roll_numbers: string[];
+  not_found_roll_numbers: string[];
+}
+
+interface AcademicYearOption {
+  id: number;
+  label: string;
+}
+
+interface AlumniDueRow {
+  id: number;
+  student_roll_number: string;
+  student_name: string | null;
+  student_email: string | null;
+  student_mobile: string | null;
+  branch: string | null;
+  section: string | null;
+  academic_year: string | null;
+  due_clear_by_date: string | null;
+  is_form_submitted: boolean;
+  submitted_at: string | null;
+  is_cleared: boolean;
+  status_of_registration_with_alumni_portal: "Y" | "N" | null;
+  linkedin_profile_link: string | null;
+  placement_status: "Y" | "N" | null;
+  proof_of_placement: string | null;
+  planning_for_higher_education: "Y" | "N" | null;
+  proof_of_higher_education: string | null;
+  campaign_key: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AlumniDueFilterValues {
+  academicYearId: string;
+  formStatus: "all" | "submitted" | "pending";
+  rollNumber: string;
+  registrationStatus: "" | "Y" | "N";
+  placementStatus: "" | "Y" | "N";
+  higherEducationStatus: "" | "Y" | "N";
+}
+
 type FormStep = 1 | 2 | 3 | 4;
 
 const AddDue = () => {
@@ -80,8 +126,41 @@ const AddDue = () => {
 
   // Bulk upload state
   const fileRef = useRef<HTMLInputElement>(null);
+  const alumniRollFileRef = useRef<HTMLInputElement>(null);
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [alumniRollInput, setAlumniRollInput] = useState("");
+  const [alumniParsedRollNumbers, setAlumniParsedRollNumbers] = useState<
+    string[]
+  >([]);
+  const [alumniReopenSubmitting, setAlumniReopenSubmitting] = useState(false);
+  const [alumniReopenSummary, setAlumniReopenSummary] =
+    useState<AlumniReopenSummary | null>(null);
+  const [alumniAcademicYears, setAlumniAcademicYears] = useState<
+    AcademicYearOption[]
+  >([]);
+  const [alumniFilterAcademicYearId, setAlumniFilterAcademicYearId] =
+    useState("");
+  const [alumniFilterFormStatus, setAlumniFilterFormStatus] = useState<
+    "all" | "submitted" | "pending"
+  >("all");
+  const [alumniFilterRollNumber, setAlumniFilterRollNumber] = useState("");
+  const [alumniFilterRegistrationStatus, setAlumniFilterRegistrationStatus] =
+    useState<"" | "Y" | "N">("");
+  const [alumniFilterPlacementStatus, setAlumniFilterPlacementStatus] =
+    useState<"" | "Y" | "N">("");
+  const [
+    alumniFilterHigherEducationStatus,
+    setAlumniFilterHigherEducationStatus,
+  ] = useState<"" | "Y" | "N">("");
+  const [alumniRowsLoading, setAlumniRowsLoading] = useState(false);
+  const [alumniRowsError, setAlumniRowsError] = useState("");
+  const [alumniFilteredRows, setAlumniFilteredRows] = useState<AlumniDueRow[]>(
+    [],
+  );
+  const [alumniSelectedRollNumbers, setAlumniSelectedRollNumbers] = useState<
+    string[]
+  >([]);
 
   // Get user data from localStorage
   const userData = JSON.parse(localStorage.getItem("user") || "{}");
@@ -93,17 +172,38 @@ const AddDue = () => {
       | "operator"
       | "hod"
       | "student",
-    departmentId: userData.department_id,
-    sectionId: userData.section_id,
-    operatorType: userData.operator_type || "department",
-    accessLevel: userData.access_level || "all_students",
+    departmentId: userData.department_id ?? userData.departmentId,
+    sectionId: userData.section_id ?? userData.sectionId,
+    sectionName: userData.section_name || userData.sectionName || "",
+    operatorType:
+      userData.operator_type || userData.operatorType || "department",
+    accessLevel:
+      userData.access_level || userData.accessLevel || "all_students",
   };
 
   const isForFaculty = user.accessLevel === "all_faculty";
+  const normalizedSectionName = String(user.sectionName || "").toLowerCase();
+  const isAlumniSectionOperator =
+    !isForFaculty &&
+    Boolean(user.sectionId) &&
+    (normalizedSectionName.includes("alumni") ||
+      normalizedSectionName.includes("alumini"));
+  const isDepartmentStudentOperator =
+    !isForFaculty &&
+    (user.operatorType === "department" || Boolean(user.departmentId));
 
   useEffect(() => {
     fetchDueTypes();
   }, []);
+
+  useEffect(() => {
+    if (!isAlumniSectionOperator) {
+      return;
+    }
+
+    fetchAlumniAcademicYears();
+    fetchFilteredAlumniDues();
+  }, [isAlumniSectionOperator]);
 
   useEffect(() => {
     const code = rollNumber.trim().toUpperCase();
@@ -159,6 +259,109 @@ const AddDue = () => {
     } catch (error) {
       console.error("Error fetching due types:", error);
       toast.error("Failed to fetch due types");
+    }
+  };
+
+  const fetchAlumniAcademicYears = async () => {
+    try {
+      const response = await fetch("/api/operator/academic-years", {
+        credentials: "include",
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to fetch academic years");
+      }
+
+      const options = (data.data || []).map(
+        (year: {
+          id: number;
+          beginning_year: number;
+          ending_year: number;
+        }) => ({
+          id: year.id,
+          label: `${year.beginning_year}-${year.ending_year}`,
+        }),
+      );
+
+      setAlumniAcademicYears(options);
+    } catch (error) {
+      console.error("Error fetching academic years for alumni filters:", error);
+    }
+  };
+
+  const fetchFilteredAlumniDues = async (
+    overrides?: Partial<AlumniDueFilterValues>,
+  ) => {
+    if (!isAlumniSectionOperator) {
+      return;
+    }
+
+    const filters: AlumniDueFilterValues = {
+      academicYearId: overrides?.academicYearId ?? alumniFilterAcademicYearId,
+      formStatus: overrides?.formStatus ?? alumniFilterFormStatus,
+      rollNumber: overrides?.rollNumber ?? alumniFilterRollNumber,
+      registrationStatus:
+        overrides?.registrationStatus ?? alumniFilterRegistrationStatus,
+      placementStatus:
+        overrides?.placementStatus ?? alumniFilterPlacementStatus,
+      higherEducationStatus:
+        overrides?.higherEducationStatus ?? alumniFilterHigherEducationStatus,
+    };
+
+    const params = new URLSearchParams();
+    if (filters.academicYearId) {
+      params.append("academic_year_id", filters.academicYearId);
+    }
+    if (filters.formStatus && filters.formStatus !== "all") {
+      params.append("form_status", filters.formStatus);
+    }
+    if (filters.rollNumber.trim()) {
+      params.append("roll_number", filters.rollNumber.trim().toUpperCase());
+    }
+    if (filters.registrationStatus) {
+      params.append("registration_status", filters.registrationStatus);
+    }
+    if (filters.placementStatus) {
+      params.append("placement_status", filters.placementStatus);
+    }
+    if (filters.higherEducationStatus) {
+      params.append("higher_education_status", filters.higherEducationStatus);
+    }
+
+    setAlumniRowsLoading(true);
+    setAlumniRowsError("");
+
+    try {
+      const response = await fetch(
+        `/api/operator/dues/alumni/export-data?${params.toString()}`,
+        {
+          credentials: "include",
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to fetch alumni dues");
+      }
+
+      setAlumniFilteredRows(data.data || []);
+      setAlumniSelectedRollNumbers((prev) =>
+        prev.filter((roll) =>
+          (data.data || []).some(
+            (row: AlumniDueRow) => row.student_roll_number === roll,
+          ),
+        ),
+      );
+    } catch (error) {
+      console.error("Error fetching filtered alumni dues:", error);
+      setAlumniRowsError(
+        error instanceof Error ? error.message : "Failed to fetch alumni dues",
+      );
+      setAlumniFilteredRows([]);
+      setAlumniSelectedRollNumbers([]);
+    } finally {
+      setAlumniRowsLoading(false);
     }
   };
 
@@ -299,6 +502,247 @@ const AddDue = () => {
     setLookupStatus("idle");
     setPersonLookup(null);
     setIsConfirmModalOpen(false);
+  };
+
+  const normalizeRollNumbers = (
+    values: Array<string | number | null | undefined>,
+  ) => {
+    const normalized = values
+      .map((value) =>
+        String(value || "")
+          .trim()
+          .toUpperCase(),
+      )
+      .map((value) => value.replace(/\s+/g, ""))
+      .filter((value) => value.length > 0)
+      .filter((value) => /^[A-Z0-9._-]+$/.test(value))
+      .filter((value) => /\d/.test(value));
+
+    return [...new Set(normalized)];
+  };
+
+  const parseRollNumbersFromText = (value: string) => {
+    const tokens = value.split(/[\s,;\n\r\t]+/);
+    return normalizeRollNumbers(tokens);
+  };
+
+  const handleParseAlumniRollInput = () => {
+    const parsed = parseRollNumbersFromText(alumniRollInput);
+    if (parsed.length === 0) {
+      toast.error("No valid roll numbers found");
+      setAlumniParsedRollNumbers([]);
+      return;
+    }
+
+    setAlumniParsedRollNumbers(parsed);
+    setAlumniReopenSummary(null);
+    toast.success(`Loaded ${parsed.length} roll numbers`);
+  };
+
+  const toggleAlumniRollSelection = (rollNumber: string) => {
+    setAlumniSelectedRollNumbers((prev) => {
+      if (prev.includes(rollNumber)) {
+        return prev.filter((value) => value !== rollNumber);
+      }
+
+      return [...prev, rollNumber];
+    });
+  };
+
+  const uniqueVisibleRollNumbers = [
+    ...new Set(alumniFilteredRows.map((row) => row.student_roll_number)),
+  ];
+
+  const areAllVisibleAlumniRowsSelected =
+    uniqueVisibleRollNumbers.length > 0 &&
+    uniqueVisibleRollNumbers.every((roll) =>
+      alumniSelectedRollNumbers.includes(roll),
+    );
+
+  const toggleSelectAllVisibleAlumniRows = () => {
+    if (uniqueVisibleRollNumbers.length === 0) {
+      return;
+    }
+
+    setAlumniSelectedRollNumbers((prev) => {
+      if (areAllVisibleAlumniRowsSelected) {
+        return prev.filter((roll) => !uniqueVisibleRollNumbers.includes(roll));
+      }
+
+      return normalizeRollNumbers([...prev, ...uniqueVisibleRollNumbers]);
+    });
+  };
+
+  const addSelectedRollNumbersToReopenList = () => {
+    if (alumniSelectedRollNumbers.length === 0) {
+      toast.error("Please select roll numbers from the table first");
+      return;
+    }
+
+    const merged = normalizeRollNumbers([
+      ...alumniParsedRollNumbers,
+      ...alumniSelectedRollNumbers,
+    ]);
+
+    setAlumniParsedRollNumbers(merged);
+    setAlumniRollInput(merged.join("\n"));
+    setAlumniReopenSummary(null);
+    toast.success(
+      `Added ${alumniSelectedRollNumbers.length} selected roll numbers`,
+    );
+  };
+
+  const resetAlumniFilters = async () => {
+    setAlumniFilterAcademicYearId("");
+    setAlumniFilterFormStatus("all");
+    setAlumniFilterRollNumber("");
+    setAlumniFilterRegistrationStatus("");
+    setAlumniFilterPlacementStatus("");
+    setAlumniFilterHigherEducationStatus("");
+
+    await fetchFilteredAlumniDues({
+      academicYearId: "",
+      formStatus: "all",
+      rollNumber: "",
+      registrationStatus: "",
+      placementStatus: "",
+      higherEducationStatus: "",
+    });
+  };
+
+  const handleAlumniRollFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const lowerName = file.name.toLowerCase();
+      let parsed: string[] = [];
+
+      if (lowerName.endsWith(".csv") || lowerName.endsWith(".txt")) {
+        const text = await file.text();
+        parsed = parseRollNumbersFromText(text);
+      } else if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: "array" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rows = XLSX.utils.sheet_to_json(ws, {
+          header: 1,
+          defval: "",
+        }) as unknown[][];
+
+        const firstColumnValues = rows.slice(1).map((row) => row[0]);
+        parsed = normalizeRollNumbers(firstColumnValues as Array<string>);
+
+        if (parsed.length === 0) {
+          parsed = normalizeRollNumbers(rows.flat() as Array<string>);
+        }
+      } else {
+        toast.error("Upload CSV, TXT, XLSX, or XLS file");
+        return;
+      }
+
+      if (parsed.length === 0) {
+        toast.error("No valid roll numbers found in file");
+        return;
+      }
+
+      setAlumniParsedRollNumbers(parsed);
+      setAlumniRollInput(parsed.join("\n"));
+      setAlumniReopenSummary(null);
+      toast.success(`Loaded ${parsed.length} roll numbers from file`);
+    } catch (error) {
+      console.error("Error reading alumni roll file:", error);
+      toast.error("Failed to parse uploaded file");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  const submitAlumniFormReopen = async (rollNumbersOverride?: string[]) => {
+    const overrideRollNumbers = normalizeRollNumbers(rollNumbersOverride || []);
+
+    const rollNumbersToSubmit =
+      overrideRollNumbers.length > 0
+        ? overrideRollNumbers
+        : alumniParsedRollNumbers.length > 0
+          ? alumniParsedRollNumbers
+          : parseRollNumbersFromText(alumniRollInput);
+
+    if (rollNumbersToSubmit.length === 0) {
+      toast.error("Please provide roll numbers before submitting");
+      return;
+    }
+
+    setAlumniReopenSubmitting(true);
+    setAlumniReopenSummary(null);
+
+    try {
+      const response = await fetch("/api/operator/dues/alumni/reopen-forms", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          roll_numbers: rollNumbersToSubmit,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to reopen alumni forms");
+      }
+
+      setAlumniReopenSummary(data.data as AlumniReopenSummary);
+      setAlumniParsedRollNumbers(rollNumbersToSubmit);
+      setAlumniRollInput(rollNumbersToSubmit.join("\n"));
+      setAlumniSelectedRollNumbers([]);
+      await fetchFilteredAlumniDues();
+      toast.success(data.message || "Alumni forms reopened successfully");
+    } catch (error) {
+      console.error("Error reopening alumni forms:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to reopen alumni forms",
+      );
+    } finally {
+      setAlumniReopenSubmitting(false);
+    }
+  };
+
+  const formatAlumniDate = (value?: string | null) => {
+    if (!value) {
+      return "-";
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "-";
+    }
+
+    return parsed.toLocaleDateString("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const renderAlumniYesNoBadge = (value: "Y" | "N" | null) => {
+    if (value === "Y") {
+      return <span className="badge badge-success badge-sm">Yes</span>;
+    }
+
+    if (value === "N") {
+      return <span className="badge badge-warning badge-sm">No</span>;
+    }
+
+    return <span className="text-xs text-base-content/50">-</span>;
   };
 
   const downloadTemplate = () => {
@@ -678,6 +1122,19 @@ const AddDue = () => {
     return "pending";
   };
 
+  if (isDepartmentStudentOperator) {
+    return (
+      <DepartmentDueForm
+        user={{
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          sectionName: user.sectionName,
+        }}
+      />
+    );
+  }
+
   return (
     <DashboardLayout
       role={user.role}
@@ -694,6 +1151,437 @@ const AddDue = () => {
             step-by-step process
           </p>
         </div>
+
+        {isAlumniSectionOperator && (
+          <div className="bg-base-100 rounded-lg shadow-md p-6 space-y-4">
+            <div>
+              <h3 className="text-2xl font-bold text-primary">
+                Reopen Alumni Form (Corrections)
+              </h3>
+              <p className="text-base-content/70 mt-1">
+                Filter alumni dues by form fields, review the table, and reopen
+                selected students.
+              </p>
+            </div>
+
+            <div className="alert alert-info">
+              <AlertCircle size={20} />
+              <span>
+                This resets the latest alumni submission for each listed roll
+                number and makes the student fill the form again.
+              </span>
+            </div>
+
+            <div className="bg-base-200/70 border border-base-300 rounded-lg p-4 space-y-4">
+              <h4 className="font-semibold text-lg">Filter Alumni Dues</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Academic Year</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={alumniFilterAcademicYearId}
+                    onChange={(e) =>
+                      setAlumniFilterAcademicYearId(e.target.value)
+                    }
+                  >
+                    <option value="">All Academic Years</option>
+                    {alumniAcademicYears.map((year) => (
+                      <option key={year.id} value={String(year.id)}>
+                        {year.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Form Status</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={alumniFilterFormStatus}
+                    onChange={(e) =>
+                      setAlumniFilterFormStatus(
+                        e.target.value as "all" | "submitted" | "pending",
+                      )
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Roll Number</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input input-bordered"
+                    placeholder="Search roll number"
+                    value={alumniFilterRollNumber}
+                    onChange={(e) =>
+                      setAlumniFilterRollNumber(e.target.value.toUpperCase())
+                    }
+                  />
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">
+                      Registered in Alumni Portal
+                    </span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={alumniFilterRegistrationStatus}
+                    onChange={(e) =>
+                      setAlumniFilterRegistrationStatus(
+                        e.target.value as "" | "Y" | "N",
+                      )
+                    }
+                  >
+                    <option value="">All</option>
+                    <option value="Y">Yes</option>
+                    <option value="N">No</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Placement Status</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={alumniFilterPlacementStatus}
+                    onChange={(e) =>
+                      setAlumniFilterPlacementStatus(
+                        e.target.value as "" | "Y" | "N",
+                      )
+                    }
+                  >
+                    <option value="">All</option>
+                    <option value="Y">Placed</option>
+                    <option value="N">Not Placed</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Higher Education</span>
+                  </label>
+                  <select
+                    className="select select-bordered"
+                    value={alumniFilterHigherEducationStatus}
+                    onChange={(e) =>
+                      setAlumniFilterHigherEducationStatus(
+                        e.target.value as "" | "Y" | "N",
+                      )
+                    }
+                  >
+                    <option value="">All</option>
+                    <option value="Y">Planning</option>
+                    <option value="N">Not Planning</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  type="button"
+                  className={`btn btn-primary ${alumniRowsLoading ? "loading" : ""}`}
+                  disabled={alumniRowsLoading}
+                  onClick={() => fetchFilteredAlumniDues()}
+                >
+                  Apply Filters
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={resetAlumniFilters}
+                  disabled={alumniRowsLoading}
+                >
+                  Reset Filters
+                </button>
+              </div>
+            </div>
+
+            {alumniRowsError && (
+              <div className="alert alert-error">
+                <AlertCircle size={18} />
+                <span>{alumniRowsError}</span>
+              </div>
+            )}
+
+            <div className="border border-base-300 rounded-lg overflow-hidden">
+              <div className="bg-base-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold">Filtered Alumni Dues</p>
+                  <p className="text-xs text-base-content/70">
+                    Rows: {alumniFilteredRows.length} | Selected Roll Numbers:{" "}
+                    {alumniSelectedRollNumbers.length}
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={toggleSelectAllVisibleAlumniRows}
+                    disabled={alumniFilteredRows.length === 0}
+                  >
+                    {areAllVisibleAlumniRowsSelected
+                      ? "Unselect Visible"
+                      : "Select Visible"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={addSelectedRollNumbersToReopenList}
+                    disabled={alumniSelectedRollNumbers.length === 0}
+                  >
+                    Add Selected to Roll List
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-primary btn-sm ${alumniReopenSubmitting ? "loading" : ""}`}
+                    onClick={() =>
+                      submitAlumniFormReopen(alumniSelectedRollNumbers)
+                    }
+                    disabled={
+                      alumniReopenSubmitting ||
+                      alumniSelectedRollNumbers.length === 0
+                    }
+                  >
+                    Reopen Selected
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-[28rem]">
+                <table className="table table-sm table-pin-rows">
+                  <thead>
+                    <tr className="bg-base-100">
+                      <th>
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-sm"
+                          checked={areAllVisibleAlumniRowsSelected}
+                          onChange={toggleSelectAllVisibleAlumniRows}
+                          disabled={alumniFilteredRows.length === 0}
+                        />
+                      </th>
+                      <th>Roll Number</th>
+                      <th>Student Name</th>
+                      <th>Academic Year</th>
+                      <th>Form Submitted</th>
+                      <th>Portal Registration</th>
+                      <th>Placement</th>
+                      <th>Higher Education</th>
+                      <th>LinkedIn</th>
+                      <th>Due Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alumniRowsLoading && (
+                      <tr>
+                        <td colSpan={10} className="text-center py-6">
+                          <span className="loading loading-spinner loading-sm mr-2" />
+                          Loading alumni dues...
+                        </td>
+                      </tr>
+                    )}
+
+                    {!alumniRowsLoading && alumniFilteredRows.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="text-center py-6 text-base-content/70"
+                        >
+                          No alumni dues found for selected filters.
+                        </td>
+                      </tr>
+                    )}
+
+                    {!alumniRowsLoading &&
+                      alumniFilteredRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              className="checkbox checkbox-sm"
+                              checked={alumniSelectedRollNumbers.includes(
+                                row.student_roll_number,
+                              )}
+                              onChange={() =>
+                                toggleAlumniRollSelection(
+                                  row.student_roll_number,
+                                )
+                              }
+                            />
+                          </td>
+                          <td className="font-mono font-semibold">
+                            {row.student_roll_number}
+                          </td>
+                          <td>{row.student_name || "-"}</td>
+                          <td>{row.academic_year || "-"}</td>
+                          <td>
+                            {row.is_form_submitted ? (
+                              <span className="badge badge-success badge-sm">
+                                Submitted
+                              </span>
+                            ) : (
+                              <span className="badge badge-warning badge-sm">
+                                Pending
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {renderAlumniYesNoBadge(
+                              row.status_of_registration_with_alumni_portal,
+                            )}
+                          </td>
+                          <td>
+                            {renderAlumniYesNoBadge(row.placement_status)}
+                          </td>
+                          <td>
+                            {renderAlumniYesNoBadge(
+                              row.planning_for_higher_education,
+                            )}
+                          </td>
+                          <td>
+                            {row.linkedin_profile_link ? (
+                              <a
+                                href={row.linkedin_profile_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="link link-primary text-xs"
+                              >
+                                Open
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td>{formatAlumniDate(row.due_clear_by_date)}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="divider my-1">OR</div>
+
+            <div className="form-control">
+              <label className="label">
+                <span className="label-text font-semibold">
+                  Manual Roll Number List (one per line or comma-separated)
+                </span>
+              </label>
+              <textarea
+                className="textarea textarea-bordered min-h-32"
+                placeholder="21B81A0501\n21B81A0502"
+                value={alumniRollInput}
+                onChange={(e) => {
+                  setAlumniRollInput(e.target.value.toUpperCase());
+                  setAlumniReopenSummary(null);
+                }}
+              />
+            </div>
+
+            <div className="form-control">
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleParseAlumniRollInput}
+                >
+                  Parse Roll Numbers
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-outline gap-2"
+                  onClick={() => alumniRollFileRef.current?.click()}
+                >
+                  <Upload size={16} />
+                  Upload CSV/Excel
+                </button>
+                <input
+                  ref={alumniRollFileRef}
+                  type="file"
+                  accept=".csv,.txt,.xlsx,.xls"
+                  className="hidden"
+                  onChange={handleAlumniRollFileUpload}
+                />
+
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setAlumniRollInput("");
+                    setAlumniParsedRollNumbers([]);
+                    setAlumniReopenSummary(null);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {alumniParsedRollNumbers.length > 0 && (
+              <div className="bg-base-200 rounded-lg p-4">
+                <p className="font-semibold mb-2">
+                  Parsed Roll Numbers: {alumniParsedRollNumbers.length}
+                </p>
+                <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+                  {alumniParsedRollNumbers.slice(0, 50).map((roll) => (
+                    <span key={roll} className="badge badge-outline">
+                      {roll}
+                    </span>
+                  ))}
+                </div>
+                {alumniParsedRollNumbers.length > 50 && (
+                  <p className="text-xs text-base-content/60 mt-2">
+                    Showing first 50 roll numbers.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className={`btn btn-primary gap-2 ${alumniReopenSubmitting ? "loading" : ""}`}
+                disabled={alumniReopenSubmitting}
+                onClick={submitAlumniFormReopen}
+              >
+                {!alumniReopenSubmitting && <CheckCircle2 size={16} />}
+                Reopen Parsed / Uploaded Rolls
+              </button>
+            </div>
+
+            {alumniReopenSummary && (
+              <div className="alert alert-success">
+                <div>
+                  <p className="font-semibold">
+                    Requested: {alumniReopenSummary.requested_count} | Reopened:{" "}
+                    {alumniReopenSummary.reopened_count}
+                  </p>
+                  {alumniReopenSummary.not_found_roll_numbers.length > 0 && (
+                    <p className="text-sm mt-1">
+                      Not found:{" "}
+                      {alumniReopenSummary.not_found_roll_numbers.join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Manual Entry Form */}
         <div className="bg-base-100 rounded-lg shadow-md p-6">
@@ -1444,209 +2332,215 @@ const AddDue = () => {
         </div>
 
         {/* Bulk Upload Section */}
-        <div className="bg-base-100 rounded-lg shadow-md p-6">
-          <h3 className="text-2xl font-bold text-primary mb-6">
-            Bulk Upload via Excel
-          </h3>
+        {!isAlumniSectionOperator && (
+          <div className="bg-base-100 rounded-lg shadow-md p-6">
+            <h3 className="text-2xl font-bold text-primary mb-6">
+              Bulk Upload via Excel
+            </h3>
 
-          <div className="space-y-4">
-            <div className="alert alert-warning">
-              <AlertCircle size={20} />
-              <div>
-                <p className="font-semibold">Important:</p>
-                <ul className="list-disc list-inside text-sm mt-2">
-                  <li>Download the template and fill in your data</li>
-                  <li>Do not modify the template column headers</li>
-                  <li>
-                    Check the <strong>Due Types Reference</strong> sheet in the
-                    template for valid Due Type IDs
-                  </li>
-                  <li>Ensure all required fields are filled</li>
-                  <li>Review the preview table before submitting</li>
-                </ul>
+            <div className="space-y-4">
+              <div className="alert alert-warning">
+                <AlertCircle size={20} />
+                <div>
+                  <p className="font-semibold">Important:</p>
+                  <ul className="list-disc list-inside text-sm mt-2">
+                    <li>Download the template and fill in your data</li>
+                    <li>Do not modify the template column headers</li>
+                    <li>
+                      Check the <strong>Due Types Reference</strong> sheet in
+                      the template for valid Due Type IDs
+                    </li>
+                    <li>Ensure all required fields are filled</li>
+                    <li>Review the preview table before submitting</li>
+                  </ul>
+                </div>
               </div>
-            </div>
 
-            <div className="flex gap-4 flex-wrap">
-              <button onClick={downloadTemplate} className="btn btn-info gap-2">
-                <Download size={20} />
-                Download Template
-              </button>
-
-              <button
-                className="btn btn-primary gap-2"
-                onClick={() => fileRef.current?.click()}
-              >
-                <Upload size={20} />
-                Upload Excel
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-
-              {bulkRows.length > 0 && (
+              <div className="flex gap-4 flex-wrap">
                 <button
-                  className="btn btn-ghost btn-sm gap-1 text-error self-center"
-                  onClick={() => setBulkRows([])}
+                  onClick={downloadTemplate}
+                  className="btn btn-info gap-2"
                 >
-                  <X size={16} />
-                  Clear All
+                  <Download size={20} />
+                  Download Template
                 </button>
-              )}
-            </div>
 
-            {/* Preview Table */}
-            {bulkRows.length > 0 && (
-              <div className="space-y-4 mt-4">
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-lg">
-                    Preview ({bulkRows.length} rows)
-                  </p>
-                  <div className="flex gap-2 text-sm">
-                    {bulkRows.some((r) => r.status === "success") && (
-                      <span className="badge badge-success gap-1">
-                        <CheckCircle2 size={12} />
-                        {
-                          bulkRows.filter((r) => r.status === "success").length
-                        }{" "}
-                        success
-                      </span>
-                    )}
-                    {bulkRows.some((r) => r.status === "error") && (
-                      <span className="badge badge-error gap-1">
-                        <AlertCircle size={12} />
-                        {
-                          bulkRows.filter((r) => r.status === "error").length
-                        }{" "}
-                        failed
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <button
+                  className="btn btn-primary gap-2"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Upload size={20} />
+                  Upload Excel
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
 
-                <div className="overflow-x-auto max-h-96 border rounded-lg">
-                  <table className="table table-sm table-pin-rows">
-                    <thead>
-                      <tr className="bg-base-200">
-                        <th>#</th>
-                        <th>
-                          {isForFaculty ? "Employee Code" : "Roll Number"}
-                        </th>
-                        <th>Due Type</th>
-                        <th>Payment</th>
-                        <th>Amount</th>
-                        <th>Due Date</th>
-                        <th>Description</th>
-                        <th>Status</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bulkRows.map((row) => (
-                        <tr
-                          key={row.index}
-                          className={
-                            row.status === "success"
-                              ? "bg-success/10"
-                              : row.status === "error"
-                                ? "bg-error/10"
-                                : ""
-                          }
-                        >
-                          <td>{row.index + 1}</td>
-                          <td className="font-mono font-semibold">
-                            {row.rollNumber}
-                          </td>
-                          <td>
-                            <span className="text-xs text-base-content/60">
-                              ID: {row.dueTypeId}
-                            </span>
-                            {row.dueTypeName && (
-                              <span className="block text-xs">
-                                {row.dueTypeName}
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            <span
-                              className={`badge badge-sm ${row.paymentType.toLowerCase() === "payable" ? "badge-warning" : "badge-info"}`}
-                            >
-                              {row.paymentType || "—"}
-                            </span>
-                          </td>
-                          <td>{row.amount ? `₹${row.amount}` : "—"}</td>
-                          <td className="whitespace-nowrap">{row.dueDate}</td>
-                          <td className="max-w-xs truncate text-xs">
-                            {row.dueDescription || "—"}
-                          </td>
-                          <td>
-                            {row.status === "success" && (
-                              <span className="badge badge-success badge-sm gap-1">
-                                <CheckCircle2 size={10} />
-                                OK
-                              </span>
-                            )}
-                            {row.status === "error" && (
-                              <div
-                                className="tooltip tooltip-left"
-                                data-tip={row.errorMsg}
-                              >
-                                <span className="badge badge-error badge-sm gap-1 cursor-help">
-                                  <AlertCircle size={10} />
-                                  Error
-                                </span>
-                              </div>
-                            )}
-                            {row.status === "pending" && (
-                              <span className="badge badge-ghost badge-sm">
-                                Pending
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            {row.status === "pending" && (
-                              <button
-                                className="btn btn-ghost btn-xs text-error"
-                                onClick={() => removeBulkRow(row.index)}
-                                title="Remove row"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Submit button */}
-                {bulkRows.some((r) => r.status === "pending") && (
-                  <div className="flex justify-end">
-                    <button
-                      className="btn btn-primary gap-2"
-                      onClick={submitBulk}
-                      disabled={bulkSubmitting}
-                    >
-                      {bulkSubmitting ? (
-                        <span className="loading loading-spinner loading-sm" />
-                      ) : (
-                        <Upload size={18} />
-                      )}
-                      Upload{" "}
-                      {bulkRows.filter((r) => r.status === "pending").length}{" "}
-                      Dues
-                    </button>
-                  </div>
+                {bulkRows.length > 0 && (
+                  <button
+                    className="btn btn-ghost btn-sm gap-1 text-error self-center"
+                    onClick={() => setBulkRows([])}
+                  >
+                    <X size={16} />
+                    Clear All
+                  </button>
                 )}
               </div>
-            )}
+
+              {/* Preview Table */}
+              {bulkRows.length > 0 && (
+                <div className="space-y-4 mt-4">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-lg">
+                      Preview ({bulkRows.length} rows)
+                    </p>
+                    <div className="flex gap-2 text-sm">
+                      {bulkRows.some((r) => r.status === "success") && (
+                        <span className="badge badge-success gap-1">
+                          <CheckCircle2 size={12} />
+                          {
+                            bulkRows.filter((r) => r.status === "success")
+                              .length
+                          }{" "}
+                          success
+                        </span>
+                      )}
+                      {bulkRows.some((r) => r.status === "error") && (
+                        <span className="badge badge-error gap-1">
+                          <AlertCircle size={12} />
+                          {
+                            bulkRows.filter((r) => r.status === "error").length
+                          }{" "}
+                          failed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-96 border rounded-lg">
+                    <table className="table table-sm table-pin-rows">
+                      <thead>
+                        <tr className="bg-base-200">
+                          <th>#</th>
+                          <th>
+                            {isForFaculty ? "Employee Code" : "Roll Number"}
+                          </th>
+                          <th>Due Type</th>
+                          <th>Payment</th>
+                          <th>Amount</th>
+                          <th>Due Date</th>
+                          <th>Description</th>
+                          <th>Status</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkRows.map((row) => (
+                          <tr
+                            key={row.index}
+                            className={
+                              row.status === "success"
+                                ? "bg-success/10"
+                                : row.status === "error"
+                                  ? "bg-error/10"
+                                  : ""
+                            }
+                          >
+                            <td>{row.index + 1}</td>
+                            <td className="font-mono font-semibold">
+                              {row.rollNumber}
+                            </td>
+                            <td>
+                              <span className="text-xs text-base-content/60">
+                                ID: {row.dueTypeId}
+                              </span>
+                              {row.dueTypeName && (
+                                <span className="block text-xs">
+                                  {row.dueTypeName}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <span
+                                className={`badge badge-sm ${row.paymentType.toLowerCase() === "payable" ? "badge-warning" : "badge-info"}`}
+                              >
+                                {row.paymentType || "—"}
+                              </span>
+                            </td>
+                            <td>{row.amount ? `₹${row.amount}` : "—"}</td>
+                            <td className="whitespace-nowrap">{row.dueDate}</td>
+                            <td className="max-w-xs truncate text-xs">
+                              {row.dueDescription || "—"}
+                            </td>
+                            <td>
+                              {row.status === "success" && (
+                                <span className="badge badge-success badge-sm gap-1">
+                                  <CheckCircle2 size={10} />
+                                  OK
+                                </span>
+                              )}
+                              {row.status === "error" && (
+                                <div
+                                  className="tooltip tooltip-left"
+                                  data-tip={row.errorMsg}
+                                >
+                                  <span className="badge badge-error badge-sm gap-1 cursor-help">
+                                    <AlertCircle size={10} />
+                                    Error
+                                  </span>
+                                </div>
+                              )}
+                              {row.status === "pending" && (
+                                <span className="badge badge-ghost badge-sm">
+                                  Pending
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {row.status === "pending" && (
+                                <button
+                                  className="btn btn-ghost btn-xs text-error"
+                                  onClick={() => removeBulkRow(row.index)}
+                                  title="Remove row"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Submit button */}
+                  {bulkRows.some((r) => r.status === "pending") && (
+                    <div className="flex justify-end">
+                      <button
+                        className="btn btn-primary gap-2"
+                        onClick={submitBulk}
+                        disabled={bulkSubmitting}
+                      >
+                        {bulkSubmitting ? (
+                          <span className="loading loading-spinner loading-sm" />
+                        ) : (
+                          <Upload size={18} />
+                        )}
+                        Upload{" "}
+                        {bulkRows.filter((r) => r.status === "pending").length}{" "}
+                        Dues
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Confirmation Modal */}
         {isConfirmModalOpen && (

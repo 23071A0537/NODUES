@@ -2,6 +2,10 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { sql } from "../config/db.js";
 import { clearSession } from "../middleware/sessionTimeout.js";
+import {
+  getTokenClearCookieOptions,
+  getTokenCookieOptions,
+} from "../utils/authCookie.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '30m'; // Token expires in 30 minutes
@@ -76,12 +80,7 @@ export const loginUser = async (req, res) => {
       );
 
       // Set token as httpOnly cookie
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: COOKIE_MAX_AGE
-      });
+      res.cookie('token', token, getTokenCookieOptions(COOKIE_MAX_AGE));
 
       // Return student data (without token in response body)
       return res.status(200).json({
@@ -145,12 +144,7 @@ export const loginUser = async (req, res) => {
         );
 
         // Set token as httpOnly cookie
-        res.cookie('token', token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: COOKIE_MAX_AGE
-        });
+        res.cookie('token', token, getTokenCookieOptions(COOKIE_MAX_AGE));
 
         // Return user data (without token in response body)
         return res.status(200).json({
@@ -216,12 +210,7 @@ export const loginUser = async (req, res) => {
         );
 
         // Set token as httpOnly cookie
-        res.cookie('token', token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'strict',
-          maxAge: COOKIE_MAX_AGE
-        });
+        res.cookie('token', token, getTokenCookieOptions(COOKIE_MAX_AGE));
 
         // Return faculty data (without token in response body)
         return res.status(200).json({
@@ -291,12 +280,7 @@ export const loginUser = async (req, res) => {
         { expiresIn: JWT_EXPIRES_IN }
       );
 
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: COOKIE_MAX_AGE
-      });
+      res.cookie('token', token, getTokenCookieOptions(COOKIE_MAX_AGE));
 
       return res.status(200).json({
         success: true,
@@ -466,7 +450,7 @@ export const logoutUser = async (req, res) => {
     }
 
     // Clear cookie
-    res.clearCookie('token');
+    res.clearCookie('token', getTokenClearCookieOptions());
 
     return res.status(200).json({
       success: true,
@@ -502,12 +486,7 @@ export const refreshSession = async (req, res) => {
     );
 
     // Set new cookie
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: COOKIE_MAX_AGE
-    });
+    res.cookie('token', token, getTokenCookieOptions(COOKIE_MAX_AGE));
 
     return res.status(200).json({
       success: true,

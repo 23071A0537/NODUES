@@ -1,4 +1,11 @@
-import { AlertCircle, CheckCircle, Download, Search, X } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Download,
+  Eye,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import * as XLSX from "xlsx";
@@ -6,21 +13,67 @@ import DashboardLayout from "../../components/DashboardLayout";
 
 interface ActiveDue {
   id: number;
+  due_unique_id?: string;
+  due_source?: string;
   student_roll_number: string;
-  student_name: string;
+  student_name?: string;
+  student_name_snapshot?: string | null;
   due_type: string;
   is_payable: boolean;
+  principal_amount?: number | null;
   current_amount: number | null;
+  outstanding_amount?: number | null;
   amount_paid: number;
-  due_description: string;
+  due_description?: string | null;
   due_clear_by_date: string;
+  incident_date?: string | null;
+  serial_no?: number | null;
+  added_by_department_id?: number | null;
+  added_by_section_id?: number | null;
+  added_by_department_name?: string | null;
+  added_by_section_name?: string | null;
+  added_by_entity?: string | null;
+  program_name?: string | null;
+  branch_name?: string | null;
+  academic_year_label?: string | null;
+  semester_label?: string | null;
+  section_label?: string | null;
+  location_type?: string | null;
+  location_name?: string | null;
+  room_no?: string | null;
+  course_activity_usage_context?: string | null;
+  staff_reporting_name?: string | null;
+  staff_employee_id?: string | null;
+  staff_designation?: string | null;
+  item_equipment?: string | null;
+  issue_type?: string | null;
+  approx_value?: string | null;
+  form_remarks?: string | null;
+  documentation_type?: string | null;
+  documentation_type_other?: string | null;
+  proof_drive_link?: string | null;
+  supporting_document_link?: string | null;
+  remarks?: string | null;
   created_at: string;
+  updated_at?: string;
   is_cleared: boolean;
   overall_status: boolean;
   permission_granted: boolean;
   requires_permission: boolean;
-  needs_original: boolean;
-  needs_pdf: boolean;
+  needs_original?: boolean | null;
+  needs_pdf?: boolean | null;
+  is_compounded?: boolean | null;
+  interest_rate?: number | null;
+  academic_year_id?: number | null;
+  is_form_submitted?: boolean | null;
+  submitted_at?: string | null;
+  status_of_registration_with_alumni_portal?: "Y" | "N" | null;
+  linkedin_profile_link?: string | null;
+  placement_status?: "Y" | "N" | null;
+  proof_of_placement?: string | null;
+  planning_for_higher_education?: "Y" | "N" | null;
+  proof_of_higher_education?: string | null;
+  campaign_key?: string | null;
 }
 
 interface DueType {
@@ -38,12 +91,27 @@ const ActiveDues = () => {
     "all" | "payable" | "non-payable"
   >("all");
   const [dueTypeFilter, setDueTypeFilter] = useState<string>("all");
+  const [alumniAcademicYearFilter, setAlumniAcademicYearFilter] =
+    useState<string>("all");
+  const [alumniFormStatusFilter, setAlumniFormStatusFilter] = useState<
+    "all" | "submitted" | "pending"
+  >("all");
+  const [alumniRegistrationFilter, setAlumniRegistrationFilter] = useState<
+    "all" | "Y" | "N"
+  >("all");
+  const [alumniPlacementFilter, setAlumniPlacementFilter] = useState<
+    "all" | "Y" | "N"
+  >("all");
+  const [alumniHigherEducationFilter, setAlumniHigherEducationFilter] =
+    useState<"all" | "Y" | "N">("all");
   const [dueTypes, setDueTypes] = useState<DueType[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedDue, setSelectedDue] = useState<ActiveDue | null>(null);
   const [showClearModal, setShowClearModal] = useState(false);
   const [clearingDue, setClearingDue] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detailsDue, setDetailsDue] = useState<ActiveDue | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [permissionDueId, setPermissionDueId] = useState<number | null>(null);
   const [supportingDocLink, setSupportingDocLink] = useState("");
@@ -66,6 +134,115 @@ const ActiveDues = () => {
       | "student",
     departmentId: userData.department_id,
     sectionId: userData.section_id,
+    sectionName: userData.section_name || userData.sectionName || "",
+  };
+
+  const isAlumniSectionOperator = /alumni|alumini/i.test(
+    String(user.sectionName || ""),
+  );
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return "N/A";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? value
+      : date.toLocaleDateString("en-IN");
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "N/A";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString("en-IN");
+  };
+
+  const formatCurrency = (value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      return "N/A";
+    }
+    return `₹${Number(value).toLocaleString("en-IN")}`;
+  };
+
+  const formatBoolean = (value?: boolean | null) => {
+    if (value === null || value === undefined) {
+      return "N/A";
+    }
+    return value ? "Yes" : "No";
+  };
+
+  const formatYesNoFlag = (value?: "Y" | "N" | null) => {
+    if (!value) {
+      return "N/A";
+    }
+
+    return value === "Y" ? "Yes" : "No";
+  };
+
+  const renderYesNoBadge = (value?: "Y" | "N" | null) => {
+    if (value === "Y") {
+      return <span className="badge badge-success badge-sm">Yes</span>;
+    }
+
+    if (value === "N") {
+      return <span className="badge badge-warning badge-sm">No</span>;
+    }
+
+    return <span className="text-base-content/50">N/A</span>;
+  };
+
+  const getDueStatusLabel = (due: ActiveDue) => {
+    if (due.is_cleared) {
+      return "Cleared";
+    }
+    if (due.requires_permission && due.permission_granted) {
+      return "Permission Granted";
+    }
+    if (due.requires_permission && !due.permission_granted) {
+      return "Pending Permission";
+    }
+    return "Active";
+  };
+
+  const getFieldLabel = (key: string) =>
+    key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const getFieldValue = (key: string, value: unknown) => {
+    if (value === null || value === undefined || value === "") {
+      return "N/A";
+    }
+
+    if (typeof value === "boolean") {
+      return value ? "Yes" : "No";
+    }
+
+    if (typeof value === "number") {
+      if (
+        key.includes("amount") ||
+        key.includes("value") ||
+        key === "current_amount" ||
+        key === "principal_amount" ||
+        key === "outstanding_amount"
+      ) {
+        return `₹${value.toLocaleString("en-IN")}`;
+      }
+      return value.toString();
+    }
+
+    if (typeof value === "string") {
+      if (key.includes("_at")) {
+        return formatDateTime(value);
+      }
+      if (key.includes("date")) {
+        return formatDate(value);
+      }
+      return value;
+    }
+
+    return String(value);
+  };
+
+  const openDetailsModal = (due: ActiveDue) => {
+    setDetailsDue(due);
+    setShowDetailsModal(true);
   };
 
   useEffect(() => {
@@ -75,7 +252,20 @@ const ActiveDues = () => {
 
   useEffect(() => {
     applyFilters();
-  }, [dues, searchTerm, startDate, endDate, payableFilter, dueTypeFilter]);
+  }, [
+    dues,
+    searchTerm,
+    startDate,
+    endDate,
+    payableFilter,
+    dueTypeFilter,
+    alumniAcademicYearFilter,
+    alumniFormStatusFilter,
+    alumniRegistrationFilter,
+    alumniPlacementFilter,
+    alumniHigherEducationFilter,
+    isAlumniSectionOperator,
+  ]);
 
   const fetchDueTypes = async () => {
     try {
@@ -122,11 +312,21 @@ const ActiveDues = () => {
     if (searchTerm) {
       filtered = filtered.filter(
         (due) =>
+          (due.due_unique_id || String(due.id))
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
           due.student_roll_number
             .toLowerCase()
             .includes(searchTerm.toLowerCase()) ||
           due.student_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          due.due_type.toLowerCase().includes(searchTerm.toLowerCase()),
+          due.due_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          due.academic_year_label
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          due.linkedin_profile_link
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          due.due_description?.toLowerCase().includes(searchTerm.toLowerCase()),
       );
     }
 
@@ -148,6 +348,44 @@ const ActiveDues = () => {
         const dueDate = new Date(due.created_at);
         return dueDate >= new Date(startDate) && dueDate <= new Date(endDate);
       });
+    }
+
+    if (isAlumniSectionOperator) {
+      if (alumniAcademicYearFilter !== "all") {
+        filtered = filtered.filter(
+          (due) => due.academic_year_label === alumniAcademicYearFilter,
+        );
+      }
+
+      if (alumniFormStatusFilter !== "all") {
+        filtered = filtered.filter((due) => {
+          const isSubmitted = Boolean(due.is_form_submitted);
+          return alumniFormStatusFilter === "submitted"
+            ? isSubmitted
+            : !isSubmitted;
+        });
+      }
+
+      if (alumniRegistrationFilter !== "all") {
+        filtered = filtered.filter(
+          (due) =>
+            due.status_of_registration_with_alumni_portal ===
+            alumniRegistrationFilter,
+        );
+      }
+
+      if (alumniPlacementFilter !== "all") {
+        filtered = filtered.filter(
+          (due) => due.placement_status === alumniPlacementFilter,
+        );
+      }
+
+      if (alumniHigherEducationFilter !== "all") {
+        filtered = filtered.filter(
+          (due) =>
+            due.planning_for_higher_education === alumniHigherEducationFilter,
+        );
+      }
     }
 
     setFilteredDues(filtered);
@@ -324,24 +562,75 @@ const ActiveDues = () => {
   const downloadData = () => {
     const exportData = filteredDues.map((due, index) => ({
       "S.No": index + 1,
+      "Due ID": due.due_unique_id || due.id,
+      "Database ID": due.id,
+      Source: due.due_source || "N/A",
       "Roll Number": due.student_roll_number,
       "Student Name": due.student_name || "N/A",
+      "Student Name Snapshot": due.student_name_snapshot || "N/A",
       "Due Type": due.due_type,
       Payable: due.is_payable ? "Yes" : "No",
-      Amount: due.current_amount
-        ? `₹${due.current_amount.toLocaleString("en-IN")}`
-        : "N/A",
+      "Principal Amount": formatCurrency(due.principal_amount),
+      "Current Amount": formatCurrency(due.current_amount),
+      "Outstanding Amount": formatCurrency(due.outstanding_amount),
       "Amount Paid": due.amount_paid
         ? `₹${due.amount_paid.toLocaleString("en-IN")}`
         : "₹0",
+      "Interest Compounded": formatBoolean(due.is_compounded),
+      "Interest Rate":
+        due.interest_rate === null || due.interest_rate === undefined
+          ? "N/A"
+          : due.interest_rate,
       Description: due.due_description || "N/A",
-      "Due Date": new Date(due.due_clear_by_date).toLocaleDateString("en-IN"),
-      "Added On": new Date(due.created_at).toLocaleDateString("en-IN"),
-      Status: due.is_cleared
-        ? "Cleared"
-        : due.permission_granted
-          ? "Permission Granted"
-          : "Active",
+      "Due Date": formatDate(due.due_clear_by_date),
+      "Incident Date": formatDate(due.incident_date),
+      "Added On": formatDateTime(due.created_at),
+      "Last Updated": formatDateTime(due.updated_at),
+      Status: getDueStatusLabel(due),
+      "Requires Permission": formatBoolean(due.requires_permission),
+      "Permission Granted": formatBoolean(due.permission_granted),
+      "Needs Original": formatBoolean(due.needs_original),
+      "Needs PDF": formatBoolean(due.needs_pdf),
+      "Proof Link": due.proof_drive_link || "N/A",
+      "Supporting Document Link": due.supporting_document_link || "N/A",
+      Remarks: due.remarks || "N/A",
+      "Department ID": due.added_by_department_id ?? "N/A",
+      "Section ID": due.added_by_section_id ?? "N/A",
+      "Department Name": due.added_by_department_name || "N/A",
+      "Section Name": due.added_by_section_name || "N/A",
+      "Added By Entity": due.added_by_entity || "N/A",
+      "Department Serial No": due.serial_no ?? "N/A",
+      Program: due.program_name || "N/A",
+      Branch: due.branch_name || "N/A",
+      "Academic Year": due.academic_year_label || "N/A",
+      Semester: due.semester_label || "N/A",
+      Section: due.section_label || "N/A",
+      "Location Type": due.location_type || "N/A",
+      "Location Name": due.location_name || "N/A",
+      "Room No": due.room_no || "N/A",
+      "Course / Activity / Usage": due.course_activity_usage_context || "N/A",
+      "Staff Reporting Name": due.staff_reporting_name || "N/A",
+      "Staff Employee ID": due.staff_employee_id || "N/A",
+      "Staff Designation": due.staff_designation || "N/A",
+      "Item / Equipment": due.item_equipment || "N/A",
+      "Issue Type": due.issue_type || "N/A",
+      "Approx Value": due.approx_value || "N/A",
+      "Form Remarks": due.form_remarks || "N/A",
+      "Documentation Type": due.documentation_type || "N/A",
+      "Documentation Type Other": due.documentation_type_other || "N/A",
+      "Alumni Form Submitted": formatBoolean(due.is_form_submitted),
+      "Alumni Form Submitted At": formatDateTime(due.submitted_at),
+      "Alumni Portal Registration": formatYesNoFlag(
+        due.status_of_registration_with_alumni_portal,
+      ),
+      "Alumni LinkedIn": due.linkedin_profile_link || "N/A",
+      "Alumni Placement Status": formatYesNoFlag(due.placement_status),
+      "Alumni Placement Proof": due.proof_of_placement || "N/A",
+      "Alumni Higher Education": formatYesNoFlag(
+        due.planning_for_higher_education,
+      ),
+      "Alumni Higher Education Proof": due.proof_of_higher_education || "N/A",
+      "Alumni Campaign Key": due.campaign_key || "N/A",
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -359,6 +648,14 @@ const ActiveDues = () => {
   const startIndex = (currentPage - 1) * DUES_PER_PAGE;
   const endIndex = startIndex + DUES_PER_PAGE;
   const currentDues = filteredDues.slice(startIndex, endIndex);
+
+  const alumniAcademicYearOptions = Array.from(
+    new Set(
+      dues
+        .map((due) => due.academic_year_label || "")
+        .filter((value) => value.length > 0),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
 
   if (loading) {
     return (
@@ -407,7 +704,7 @@ const ActiveDues = () => {
         {/* Filters */}
         <div className="official-card p-6">
           <h3 className="text-xl font-bold text-primary mb-4">Filters</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <div className="form-control">
               <label className="label">
                 <span className="label-text">Search by Roll Number/Name</span>
@@ -486,13 +783,120 @@ const ActiveDues = () => {
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
+
+            {isAlumniSectionOperator && (
+              <>
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Academic Year</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-md w-full"
+                    value={alumniAcademicYearFilter}
+                    onChange={(e) =>
+                      setAlumniAcademicYearFilter(e.target.value)
+                    }
+                  >
+                    <option value="all">All Academic Years</option>
+                    {alumniAcademicYearOptions.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Form Status</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-md w-full"
+                    value={alumniFormStatusFilter}
+                    onChange={(e) =>
+                      setAlumniFormStatusFilter(
+                        e.target.value as "all" | "submitted" | "pending",
+                      )
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">
+                      Alumni Portal Registration
+                    </span>
+                  </label>
+                  <select
+                    className="select select-bordered select-md w-full"
+                    value={alumniRegistrationFilter}
+                    onChange={(e) =>
+                      setAlumniRegistrationFilter(
+                        e.target.value as "all" | "Y" | "N",
+                      )
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="Y">Yes</option>
+                    <option value="N">No</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Placement Status</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-md w-full"
+                    value={alumniPlacementFilter}
+                    onChange={(e) =>
+                      setAlumniPlacementFilter(
+                        e.target.value as "all" | "Y" | "N",
+                      )
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="Y">Placed</option>
+                    <option value="N">Not Placed</option>
+                  </select>
+                </div>
+
+                <div className="form-control">
+                  <label className="label">
+                    <span className="label-text">Higher Education</span>
+                  </label>
+                  <select
+                    className="select select-bordered select-md w-full"
+                    value={alumniHigherEducationFilter}
+                    onChange={(e) =>
+                      setAlumniHigherEducationFilter(
+                        e.target.value as "all" | "Y" | "N",
+                      )
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="Y">Planning</option>
+                    <option value="N">Not Planning</option>
+                  </select>
+                </div>
+              </>
+            )}
           </div>
 
           {(searchTerm ||
             startDate ||
             endDate ||
             payableFilter !== "all" ||
-            dueTypeFilter !== "all") && (
+            dueTypeFilter !== "all" ||
+            alumniAcademicYearFilter !== "all" ||
+            alumniFormStatusFilter !== "all" ||
+            alumniRegistrationFilter !== "all" ||
+            alumniPlacementFilter !== "all" ||
+            alumniHigherEducationFilter !== "all") && (
             <div className="mt-4">
               <button
                 onClick={() => {
@@ -501,6 +905,11 @@ const ActiveDues = () => {
                   setEndDate("");
                   setPayableFilter("all");
                   setDueTypeFilter("all");
+                  setAlumniAcademicYearFilter("all");
+                  setAlumniFormStatusFilter("all");
+                  setAlumniRegistrationFilter("all");
+                  setAlumniPlacementFilter("all");
+                  setAlumniHigherEducationFilter("all");
                 }}
                 className="btn btn-sm btn-ghost gap-2"
               >
@@ -516,118 +925,220 @@ const ActiveDues = () => {
           <div className="table-shell">
             <table className="table table-zebra w-full">
               <thead>
-                <tr>
-                  <th className="text-center">S.No</th>
-                  <th className="text-center">Due ID</th>
-                  <th className="text-center">Roll Number</th>
-                  <th className="text-center">Name</th>
-                  <th className="text-center">Due Type</th>
-                  <th className="text-center">Payable</th>
-                  <th className="text-center">Amount</th>
-                  <th className="text-center">Due Date</th>
-                  <th className="text-center">Status</th>
-                  <th className="text-center">Actions</th>
-                </tr>
+                {isAlumniSectionOperator ? (
+                  <tr>
+                    <th className="text-center">S.No</th>
+                    <th className="text-center">Due ID</th>
+                    <th className="text-center">Roll Number</th>
+                    <th className="text-center">Name</th>
+                    <th className="text-center">Academic Year</th>
+                    <th className="text-center">Portal Reg</th>
+                    <th className="text-center">Placement</th>
+                    <th className="text-center">Higher Education</th>
+                    <th className="text-center">LinkedIn</th>
+                    <th className="text-center">Form Status</th>
+                    <th className="text-center">Due Date</th>
+                    <th className="text-center">Actions</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th className="text-center">S.No</th>
+                    <th className="text-center">Due ID</th>
+                    <th className="text-center">Roll Number</th>
+                    <th className="text-center">Name</th>
+                    <th className="text-center">Due Type</th>
+                    <th className="text-center">Payable</th>
+                    <th className="text-center">Amount</th>
+                    <th className="text-center">Due Date</th>
+                    <th className="text-center">Status</th>
+                    <th className="text-center">Actions</th>
+                  </tr>
+                )}
               </thead>
               <tbody>
                 {currentDues.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-8">
+                    <td
+                      colSpan={isAlumniSectionOperator ? 12 : 10}
+                      className="text-center py-8"
+                    >
                       No active dues found
                     </td>
                   </tr>
                 ) : (
-                  currentDues.map((due, index) => (
-                    <tr key={due.id}>
-                      <td className="text-center">{startIndex + index + 1}</td>
-                      <td className="text-center font-mono text-xs">
-                        {due.id}
-                      </td>
-                      <td className="text-center font-semibold">
-                        {due.student_roll_number}
-                      </td>
-                      <td className="text-center">
-                        {due.student_name || "N/A"}
-                      </td>
-                      <td className="text-center">{due.due_type}</td>
-                      <td className="text-center">
-                        {due.is_payable ? (
-                          <span className="badge badge-success badge-sm whitespace-nowrap">
-                            Yes
-                          </span>
-                        ) : (
-                          <span className="badge badge-warning badge-sm whitespace-nowrap">
-                            No
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        {due.current_amount ? (
-                          <span className="font-semibold">
-                            ₹{due.current_amount.toLocaleString("en-IN")}
-                          </span>
-                        ) : (
-                          "N/A"
-                        )}
-                        {due.amount_paid > 0 && (
-                          <div className="text-xs text-success">
-                            Paid: ₹{due.amount_paid.toLocaleString("en-IN")}
+                  currentDues.map((due, index) =>
+                    isAlumniSectionOperator ? (
+                      <tr key={due.id}>
+                        <td className="text-center">
+                          {startIndex + index + 1}
+                        </td>
+                        <td className="text-center font-mono text-xs">
+                          {due.due_unique_id || due.id}
+                        </td>
+                        <td className="text-center font-semibold">
+                          {due.student_roll_number}
+                        </td>
+                        <td className="text-center">
+                          {due.student_name || "N/A"}
+                        </td>
+                        <td className="text-center">
+                          {due.academic_year_label || "N/A"}
+                        </td>
+                        <td className="text-center">
+                          {renderYesNoBadge(
+                            due.status_of_registration_with_alumni_portal,
+                          )}
+                        </td>
+                        <td className="text-center">
+                          {renderYesNoBadge(due.placement_status)}
+                        </td>
+                        <td className="text-center">
+                          {renderYesNoBadge(due.planning_for_higher_education)}
+                        </td>
+                        <td className="text-center">
+                          {due.linkedin_profile_link ? (
+                            <a
+                              href={due.linkedin_profile_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="link link-primary text-xs"
+                            >
+                              Open
+                            </a>
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                        <td className="text-center">
+                          {due.is_form_submitted ? (
+                            <span className="badge badge-success badge-sm whitespace-nowrap">
+                              Submitted
+                            </span>
+                          ) : (
+                            <span className="badge badge-warning badge-sm whitespace-nowrap">
+                              Pending
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-center">
+                          {new Date(due.due_clear_by_date).toLocaleDateString(
+                            "en-IN",
+                          )}
+                        </td>
+                        <td className="text-center">
+                          <div className="flex gap-2 justify-center">
+                            <button
+                              onClick={() => openDetailsModal(due)}
+                              className="btn btn-outline btn-sm gap-2"
+                            >
+                              <Eye size={16} />
+                              View
+                            </button>
                           </div>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        {new Date(due.due_clear_by_date).toLocaleDateString(
-                          "en-IN",
-                        )}
-                      </td>
-                      <td className="text-center">
-                        {due.requires_permission && due.permission_granted ? (
-                          <span className="badge badge-success gap-2 whitespace-nowrap">
-                            <CheckCircle size={14} />
-                            Permission Granted
-                          </span>
-                        ) : due.requires_permission &&
-                          !due.permission_granted ? (
-                          <span className="badge badge-warning gap-2 whitespace-nowrap">
-                            <AlertCircle size={14} />
-                            Pending Permission
-                          </span>
-                        ) : (
-                          <span className="badge badge-error whitespace-nowrap">
-                            Active
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        <div className="flex gap-2 justify-center">
-                          {!due.is_payable &&
-                            due.needs_original &&
-                            !due.permission_granted && (
-                              <button
-                                onClick={() => {
-                                  setSelectedDue(due);
-                                  setShowClearModal(true);
-                                }}
-                                className="btn btn-success btn-sm gap-2"
-                              >
-                                <CheckCircle size={16} />
-                                Clear
-                              </button>
-                            )}
-                          {due.requires_permission &&
-                            !due.permission_granted && (
-                              <button
-                                onClick={() => handleGrantPermission(due.id)}
-                                className="btn btn-primary btn-sm gap-2"
-                              >
-                                <CheckCircle size={16} />
-                                Grant Permission
-                              </button>
-                            )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={due.id}>
+                        <td className="text-center">
+                          {startIndex + index + 1}
+                        </td>
+                        <td className="text-center font-mono text-xs">
+                          {due.due_unique_id || due.id}
+                        </td>
+                        <td className="text-center font-semibold">
+                          {due.student_roll_number}
+                        </td>
+                        <td className="text-center">
+                          {due.student_name || "N/A"}
+                        </td>
+                        <td className="text-center">{due.due_type}</td>
+                        <td className="text-center">
+                          {due.is_payable ? (
+                            <span className="badge badge-success badge-sm whitespace-nowrap">
+                              Yes
+                            </span>
+                          ) : (
+                            <span className="badge badge-warning badge-sm whitespace-nowrap">
+                              No
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-center">
+                          {due.current_amount !== null &&
+                          due.current_amount !== undefined ? (
+                            <span className="font-semibold">
+                              ₹{due.current_amount.toLocaleString("en-IN")}
+                            </span>
+                          ) : (
+                            "N/A"
+                          )}
+                          {due.amount_paid > 0 && (
+                            <div className="text-xs text-success">
+                              Paid: ₹{due.amount_paid.toLocaleString("en-IN")}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-center">
+                          {new Date(due.due_clear_by_date).toLocaleDateString(
+                            "en-IN",
+                          )}
+                        </td>
+                        <td className="text-center">
+                          {due.requires_permission && due.permission_granted ? (
+                            <span className="badge badge-success gap-2 whitespace-nowrap">
+                              <CheckCircle size={14} />
+                              Permission Granted
+                            </span>
+                          ) : due.requires_permission &&
+                            !due.permission_granted ? (
+                            <span className="badge badge-warning gap-2 whitespace-nowrap">
+                              <AlertCircle size={14} />
+                              Pending Permission
+                            </span>
+                          ) : (
+                            <span className="badge badge-error whitespace-nowrap">
+                              Active
+                            </span>
+                          )}
+                        </td>
+                        <td className="text-center">
+                          <div className="flex gap-2 justify-center">
+                            <button
+                              onClick={() => openDetailsModal(due)}
+                              className="btn btn-outline btn-sm gap-2"
+                            >
+                              <Eye size={16} />
+                              View
+                            </button>
+                            {!due.is_payable &&
+                              due.needs_original &&
+                              !due.permission_granted && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedDue(due);
+                                    setShowClearModal(true);
+                                  }}
+                                  className="btn btn-success btn-sm gap-2"
+                                >
+                                  <CheckCircle size={16} />
+                                  Clear
+                                </button>
+                              )}
+                            {due.requires_permission &&
+                              !due.permission_granted && (
+                                <button
+                                  onClick={() => handleGrantPermission(due.id)}
+                                  className="btn btn-primary btn-sm gap-2"
+                                >
+                                  <CheckCircle size={16} />
+                                  Grant Permission
+                                </button>
+                              )}
+                          </div>
+                        </td>
+                      </tr>
+                    ),
+                  )
                 )}
               </tbody>
             </table>
@@ -663,6 +1174,62 @@ const ActiveDues = () => {
           )}
         </div>
       </div>
+
+      {/* Full Due Details Modal */}
+      {showDetailsModal && detailsDue && (
+        <div className="modal modal-open">
+          <div className="modal-box max-w-5xl">
+            <h3 className="font-bold text-xl mb-4">Complete Due Information</h3>
+            <div className="alert alert-info mb-4">
+              <AlertCircle size={20} />
+              <div>
+                <p className="font-semibold">
+                  Showing every available field for this due
+                </p>
+                <p className="text-sm">
+                  Due ID: {detailsDue.due_unique_id || detailsDue.id} | Roll
+                  Number: {detailsDue.student_roll_number}
+                </p>
+              </div>
+            </div>
+
+            <div className="max-h-[60vh] overflow-auto border border-base-300 rounded-lg">
+              <table className="table table-zebra w-full">
+                <thead>
+                  <tr>
+                    <th className="w-1/3">Field</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(detailsDue).map(([key, value]) => (
+                    <tr key={key}>
+                      <td className="font-semibold align-top">
+                        {getFieldLabel(key)}
+                      </td>
+                      <td className="break-words whitespace-pre-wrap">
+                        {getFieldValue(key, value)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-action">
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setDetailsDue(null);
+                }}
+                className="btn"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clear Due Modal */}
       {showClearModal && selectedDue && (

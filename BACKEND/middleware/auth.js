@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { sql } from '../config/db.js';
+import { getTokenClearCookieOptions } from '../utils/authCookie.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -11,7 +12,17 @@ export const authenticateToken = (req, res, next) => {
     // Fallback to Authorization header for backward compatibility
     if (!token) {
       const authHeader = req.headers['authorization'];
-      token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+      if (typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')) {
+        token = authHeader.slice(7).trim();
+      }
+    }
+
+    // Additional fallback for legacy clients
+    if (!token) {
+      const legacyToken = req.headers['x-access-token'] || req.headers['x-auth-token'];
+      if (typeof legacyToken === 'string') {
+        token = legacyToken;
+      }
     }
 
     if (!token) {
@@ -24,7 +35,7 @@ export const authenticateToken = (req, res, next) => {
     jwt.verify(token, JWT_SECRET, (err, user) => {
       if (err) {
         // Clear cookie if token is invalid
-        res.clearCookie('token');
+        res.clearCookie('token', getTokenClearCookieOptions());
         return res.status(403).json({ 
           success: false, 
           message: 'Invalid or expired token' 

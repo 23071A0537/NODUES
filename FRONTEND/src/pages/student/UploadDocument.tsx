@@ -22,6 +22,44 @@ interface PendingUpload {
   rejection_reason?: string;
 }
 
+type PendingUploadsApiResponse =
+  | PendingUpload[]
+  | {
+      uploads?: PendingUpload[];
+      pending_upload?: Array<Omit<PendingUpload, "status">>;
+      pending_approval?: Array<Omit<PendingUpload, "status">>;
+      rejected?: Array<Omit<PendingUpload, "status">>;
+    };
+
+const normalizePendingUploads = (
+  payload: PendingUploadsApiResponse,
+): PendingUpload[] => {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload.uploads)) {
+    return payload.uploads;
+  }
+
+  const pendingUpload = (payload.pending_upload || []).map((item) => ({
+    ...(item as PendingUpload),
+    status: "pending_upload" as const,
+  }));
+
+  const pendingApproval = (payload.pending_approval || []).map((item) => ({
+    ...(item as PendingUpload),
+    status: "pending_approval" as const,
+  }));
+
+  const rejected = (payload.rejected || []).map((item) => ({
+    ...(item as PendingUpload),
+    status: "rejected" as const,
+  }));
+
+  return [...pendingUpload, ...pendingApproval, ...rejected];
+};
+
 export default function UploadDocument() {
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,10 +82,10 @@ export default function UploadDocument() {
   const fetchPendingUploads = async () => {
     setLoading(true);
     try {
-      const data = await apiFetch<PendingUpload[]>(
+      const data = await apiFetch<PendingUploadsApiResponse>(
         "/api/student/pending-uploads",
       );
-      setPendingUploads(data);
+      setPendingUploads(normalizePendingUploads(data));
     } catch {
       toast.error("Failed to fetch pending uploads");
     } finally {
